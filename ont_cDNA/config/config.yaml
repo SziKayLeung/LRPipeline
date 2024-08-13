@@ -1,0 +1,95 @@
+
+## Output name and relevant info
+export NAME=AllBDRTargeted
+export SPECIES=hg38
+
+# sequencing mode: <targeted> <whole>
+export SEQUENCING=Targeted
+
+# if multiplexing was performed
+export MULTIPLEXING=TRUE
+
+# target genes if sequencing mode = Targeted
+export TGENES=(ABCA1 SORL1 MAPT BIN1 TARDBP APP ABCA7 PTK2B ANK1 FYN CLU CD33 FUS PICALM SNCA APOE TRPA1 RHBDF2 TREM2 VGF)
+
+## Output root directory filepath (ensure path exists)
+export SCRIPT_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA
+export WKD_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/D_ONT
+export META_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/0_metadata/B_ONT
+
+## SKLeung scripts
+export LOGEN_ROOT=//lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
+export PATH=$PATH:${LOGEN_ROOT}/miscellaneous
+export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
+SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
+
+
+## ---------------------------
+
+## Reference data filepaths
+export GENOME_FASTA=/lustre/projects/Research_Project-MRC148213/lsl693/references/human/hg38.fa
+export GENOME_GTF=/lustre/projects/Research_Project-MRC148213/lsl693/references/annotation/gencode.v40.annotation.gtf
+
+## Primers and Probes (optional)
+export PRIMER=${SCRIPT_ROOT}/utils/primer.fasta
+export TARGETED_PRIMER=${SCRIPT_ROOT}/utils/targeted.primer.fasta
+
+
+## ---------------------------
+
+# number of total samples (across all flow cells)
+export numSamples=53
+
+## ONT raw data
+# sequentially specify paths of raw fastq files from multiple flow cells
+export RAW_ROOT_DIR=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/1_raw/B_ONT
+export RAW_FASTQ_1=${RAW_ROOT_DIR}/P0063_20221026_100859/BDR_enriched/20221026_1304_2F_PAM95037_d0bc299c/fastq_pass  
+export RAW_FASTQ_2=${RAW_ROOT_DIR}/P0063_20221031_10859/BDR_enriched/20221031_1830_2F_PAM95037_04a8d91e/fastq_pass   
+
+# export raw_merged_fastq_files
+export raw_fastq1_files=($(ls ${RAW_FASTQ_1}/*fastq.gz))
+export raw_fastq2_files=($(ls ${RAW_FASTQ_2}/*fastq.gz))
+export raw_merged_fastq_files=($(echo ${raw_fastq1_files[@]} ${raw_fastq2_files[@]}))
+export numfastqfiles=($(echo "${#raw_merged_fastq_files[@]}"))
+
+export BATCH_NAMES=(Targeted_Seq_1 Targeted_Seq_2)
+export BAM_FILES=($RAW_BAM_1 $RAW_BAM_2)
+
+# export barcode (if multiplexing=TRUE) <barcode number> <sample name>
+BARCODE_CONFIG=${SCRIPT_ROOT}/config/barcode.csv
+export ALL_SAMPLES_NAMES=($(awk -F "\"*,\"*" '{print $1}' ${BARCODE_CONFIG}))
+
+# sample names to replace barcode names downstream 
+SAMPLE_ID=${SCRIPT_ROOT}/config/sample_id.csv
+
+## ---------------------------
+
+## Software 
+export SOFTDIR=/lustre/projects/Research_Project-MRC148213/lsl693/software
+
+export MINIONQC=${SOFTDIR}/minion_qc/MinIONQC.R
+# to run Porechop, require gcc-version 4.9.1 or more; 
+# on Knight: git clone https://github.com/rrwick/Porechop.git; cd Porechop; make
+# transfer whole Porechop folder from Knight to ISCA, and chmod 
+export PORECHOP=${SOFTDIR}/Porechop/porechop-runner.py
+export TCLEAN=${SOFTDIR}/TranscriptClean/TranscriptClean.py
+export CUPCAKE=${SOFTDIR}/cDNA_Cupcake
+export ANNOTATION=$CUPCAKE/annotation
+export SEQUENCE=$CUPCAKE/sequence
+export PYTHONPATH=$PYTHONPATH:$SEQUENCE
+export SQANTI3_DIR=${SOFTDIR}/SQANTI3
+
+
+## ---------------------------
+
+## Software input files
+# SQANTI3 input files
+CAGE_PEAK=$SQANTI3_DIR/data/ref_TSS_annotation/human.refTSS_v3.1.hg38.bed
+POLYA=$SQANTI3_DIR/data/polyA_motifs/mouse_and_human.polyA_motif.txt
+
+
+## ---------------------------
+cd ${WKD_ROOT}
+mkdir -p 1_demultiplex 1b_demultiplex_merged 2_cutadapt_merge 3_minimap 4_tclean 5_cupcake
+mkdir -p ${WKD_ROOT}/1_demultiplex/Batch2 ${WKD_ROOT}/5_cupcake/5_align
+mkdir -p $WKD_ROOT/5_cupcake/5_align/combined $WKD_ROOT/5_cupcake/6_collapse $WKD_ROOT/5_cupcake/5_align/combined_fasta $WKD_ROOT/5_cupcake/7_sqanti3
