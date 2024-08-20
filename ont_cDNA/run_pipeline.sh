@@ -29,7 +29,7 @@ else
   jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh 
 fi
 
-# cuptadapt, minimap, Transriptclean
+# cuptadapt, minimap, Transcriptclean
 jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1))%15 job.cmd | awk '{print $NF}')
 
 # isoseq-collapse, sqanti3
