@@ -4,7 +4,7 @@ export NAME=AllBDRTargeted
 export SPECIES=hg38
 
 # sequencing mode: <targeted> <whole>
-export SEQUENCING=targeted
+export SEQUENCING=Targeted
 
 # if multiplexing was performed
 export MULTIPLEXING=TRUE
@@ -18,17 +18,18 @@ export WKD_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/D_ONT
 export META_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/0_metadata/B_ONT
 
 ## SKLeung scripts
-export LOGEN_ROOT=//lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
+export LOGEN_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
 export PATH=$PATH:${LOGEN_ROOT}/miscellaneous
 export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
 SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
+ERCCRESULTS=$LOGEN_ROOT/compare_datasets/run_ercc.R
 
 
 ## ---------------------------
 
-## Reference data filepaths
-export GENOME_FASTA=/lustre/projects/Research_Project-MRC148213/lsl693/references/human/hg38.fa
-export GENOME_GTF=/lustre/projects/Research_Project-MRC148213/lsl693/references/annotation/gencode.v40.annotation.gtf
+## Reference data filepaths (ERCC)
+export GENOME_FASTA=/lustre/projects/Research_Project-MRC148213/lsl693/references/ERCC/ERCC92.fa
+export GENOME_GTF=/lustre/projects/Research_Project-MRC148213/lsl693/references/ERCC/ERCC92.gtf
 
 ## Primers and Probes (optional)
 export PRIMER=${SCRIPT_ROOT}/utils/primer.fasta
