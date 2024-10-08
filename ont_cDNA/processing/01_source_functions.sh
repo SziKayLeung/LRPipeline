@@ -20,8 +20,21 @@ merge_fastq_across_samples(){
   
   echo "Merging ${gval}"
   
-  fastq=$(for f in ${input_dir}/*; do ls $f/*${gval}*; done)
-  cat ${fastq} > ${output_dir}/${gval}_merged.fastq
+  fastq=$(ls ${input_dir}/*${gval}* 2>/dev/null)
+  num_files=$(echo "$fastq" | wc -w)
+  echo "Number of files to concatenate: $num_files"
+  echo "$fastq" > ${output_dir}/${gval}_file_list.txt
+  
+  # Check if the files are gzipped or plain fastq
+  if echo "$fastq" | grep -q ".gz$"; then
+    # If files are gzipped, concatenate and output as gzipped
+    echo "Concatenating gzipped files and unzip..."
+    zcat $fastq > ${output_dir}/${gval}_merged.fastq
+  else
+    # If files are not gzipped, concatenate as plain fastq
+    echo "Concatenating fastq files..."
+    cat $fastq > ${output_dir}/${gval}_merged.fastq
+  fi
 }
 
 # 2) run_QC <sample> <sequencing_summary> <bam_input> <output_dir>

@@ -19,18 +19,24 @@ echo Job started on:
 date -u
 
 # load config file provided on command line when submitting job
-echo "Loading config file for project: " $1
+echo "Loading config file for project: " source $1
 
-if [ $SEQUENCING == "targeted" ]; then
-  echo "Performed targeted sequencing or use of custom barcodes: using Porechop for demultiplexing primers and barcodes"
-  jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh --array=0-$((numfastqfiles - 1))%50 job.cmd | awk '{print $NF}')
+if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
+  if [ "${SEQUENCING}" == "targeted" ]; then
+    echo "Performed targeted sequencing or use of custom barcodes: using Porechop for demultiplexing primers and barcodes"
+    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh --array=0-$((numfastqfiles - 1))%50 job.cmd | awk '{print $NF}')
+  else
+    echo "Performed whole transcriptome sequencing or use of standard barcodes: using Pychopper for demultiplexing primers and barcodes"
+    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh)
+  fi
 else
-  echo "Performed whole transcriptome sequencing or use of standard barcodes: using Pychopper for demultiplexing primers and barcodes"
-  jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh 
+  # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder
+  ln -s ${DEMULTIPLEX_DIR} ${WKD_ROOT}/1_demultiplex
+  echo "Demultiplexing already performed"
 fi
 
 # cuptadapt, minimap, Transcriptclean
-jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1))%15 job.cmd | awk '{print $NF}')
+jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
 
 # isoseq-collapse, sqanti3
 sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/3_merged_collapse_sqanti3.sh
