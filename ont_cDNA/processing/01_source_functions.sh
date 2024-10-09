@@ -146,7 +146,7 @@ run_transcriptclean(){
   
   cd $2; mkdir -p ${name}
   cd $2/${name}
-  python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp
+  python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp --maxLenIndel=15
 }
 
 
