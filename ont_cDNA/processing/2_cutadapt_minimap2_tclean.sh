@@ -39,11 +39,20 @@ echo ${sample}
 # merge each sample into one fastq file 
 merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
 
-# delinate polyA and polyT sequences, reverse complement polyT sequences, remove polyA from all sequences
-post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+if [ "${ORIENTATE}" = TRUE ]; then
+    # delinate polyA and polyT sequences, reverse complement polyT sequences, remove polyA from all sequences
+    post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
 
-# map combined fasta to reference genome
-run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
+    # map combined fasta to reference genome
+    run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
+
+else
+    convertfasta2fastq ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged_combined.fasta
+
+    # map combined fasta to reference genome
+    run_minimap2 ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
+
+fi
 
 # run transcript clean on aligned reads
 run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_sorted.sam ${WKD_ROOT}/4_tclean
