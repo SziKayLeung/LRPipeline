@@ -12,6 +12,13 @@ run_merge(){
   
 }
 
+# convertfasta2fastq <input_fastq> <output_fasta>
+convertfasta2fastq(){
+
+  source activate nanopore
+  seqtk seq -A $1 > $2
+}
+
 merge_fastq_across_samples(){
   # variables 
   gval=$1
