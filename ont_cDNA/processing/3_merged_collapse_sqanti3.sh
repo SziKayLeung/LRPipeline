@@ -36,7 +36,7 @@ source $1
 
 # replace sample barcodes with sample names
 replace_filenames_with_csv.py --copy --ext=filtered.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID} -d=${dir}/5_align/combined 
-replace_filenames_with_csv.py --copy --ext=filtered.fa -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID}  -d=${dir}/5_align/combined_fasta 
+replace_filenames_with_csv.py --copy --ext=fa -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID}  -d=${dir}/5_align/combined_fasta 
 
 # merge all aligned files
 allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.bam)) 
