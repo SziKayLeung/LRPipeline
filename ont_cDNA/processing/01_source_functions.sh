@@ -260,13 +260,13 @@ run_sqanti3(){
   echo ${GENOME_GTF}
   echo ${GENOME_FASTA}
   
-  python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
-  --CAGE_peak ${CAGE_PEAK} \
-  --polyA_motif_list ${POLYA} \
-  --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+  #python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
+  #--CAGE_peak ${CAGE_PEAK} \
+  #--polyA_motif_list ${POLYA} \
+  #--genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
   
   echo "Processing Sample ${name} for SQANTI filter"
-  python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" ${name}"_corrected.fasta" ${name}"_corrected.gtf" -j=${filteringJson} --skip_report &> ${name}.sqanti.filter.log
+  python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
 
   
 }
