@@ -20,7 +20,7 @@ merge_fastq_across_samples(){
   
   echo "Merging ${gval}"
   
-  fastq=$(ls ${input_dir}/*${gval}* 2>/dev/null)
+  fastq=$(ls ${input_dir}/${gval}/*fa* 2>/dev/null)
   num_files=$(echo "$fastq" | wc -w)
   echo "Number of files to concatenate: $num_files"
   echo "$fastq" > ${output_dir}/${gval}_file_list.txt
@@ -35,6 +35,9 @@ merge_fastq_across_samples(){
     echo "Concatenating fastq files..."
     cat $fastq > ${output_dir}/${gval}_merged.fastq
   fi
+
+  source activate nanopore
+  seqkit stats ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
 }
 
 # 2) run_QC <sample> <sequencing_summary> <bam_input> <output_dir>
@@ -113,14 +116,18 @@ post_porechop_run_cutadapt(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_minimap2(){
 
-	name=$(basename $1 .fasta)
-	echo "Aligning ${name} using Minimap2"
-	
-	minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
+  source activate nanopore
+  name=$(basename $1 .fasta)
+  echo "Aligning ${name} using Minimap2"
+  
+  minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
   samtools sort -O SAM $2/${name}.sam > $2/${name}_sorted.sam
 
-}
+  htsbox samview -pS $2/${name}_sorted.sam > $2/${name}.paf
+  awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
+  awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
 
+}
 
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
@@ -142,7 +149,8 @@ run_transcriptclean(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_pbmm2(){
   
-  name=$(basename $1 clean.fa)
+  source activate isoseq3
+  name=$(basename $1 _clean.fa)
   echo "TranscriptClean ${name}"
   echo "Aligning ${sample}: $1..."
   echo "Output: $2/${sample}_mapped.bam"
@@ -193,7 +201,7 @@ filter_alignment(){
   
   source activate nanopore
   samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
-  samtools sort -O SAM $2/$1.filtered.bam -o $2/$1.filtered.sorted.bam
+  samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
   
   # https://bioinformatics.stackexchange.com/questions/3380/how-to-subset-a-bam-by-a-list-of-qnames
   #source activate nanopore
@@ -210,6 +218,8 @@ run_isoseq_collapse(){
   
   directory=$(dirname $1)
   cd ${directory}
+
+  source activate isoseq3
   
   isoseq3 collapse $1 $2"_collapsed.gff" \
     --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
@@ -235,6 +245,7 @@ run_sqanti3(){
   name=$(basename $1 .gff)
 
   cd $2
+  source activate sqanti2_py3
   
   # sqanti qc
   echo "Processing Sample ${name} for SQANTI3 QC"
@@ -242,10 +253,10 @@ run_sqanti3(){
   echo ${GENOME_GTF}
   echo ${GENOME_FASTA}
   
-  python $SQANTI3_DIR/sqanti3_qc.py -t 30 --gtf $1 ${GENOME_GTF} ${GENOME_FASTA} \
-  --cage_peak ${CAGE_PEAK} \
+  python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
+  --CAGE_peak ${CAGE_PEAK} \
   --polyA_motif_list ${POLYA} \
-  --genename --isoAnnotLite --gff3 $GFF3 --report pdf &> ${name}.sqanti.qc.log
+  --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
   
   echo "Processing Sample ${name} for SQANTI filter"
   python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" ${name}"_corrected.fasta" ${name}"_corrected.gtf" -j=${filteringJson} --skip_report &> ${name}.sqanti.filter.log
