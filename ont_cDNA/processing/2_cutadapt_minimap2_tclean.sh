@@ -7,7 +7,7 @@
 #SBATCH --nodes=1 # specify number of nodes
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
-##SBATCH --array=0-52%15 ## uncomment and set number of jobs (number of samples if running script separately)
+#SBATCH --array=0-2
 #SBATCH --output=2_cutadapt_minimap2_tclean-%A_%a.o
 #SBATCH --error=2_cutadapt_minimap2_tclean-%A_%a.e
 
@@ -22,7 +22,17 @@ module load Miniconda2/4.3.21
 source activate lrp
 source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
+# load config file provided on command line when submitting job
+# Check if a config file was provided on the command line
+if [ -z "$1" ]; then
+    echo "Error: No config file provided."
+    exit 1
+fi
+echo "Loading config file for project: $1" 
+source $1
+
 sample=${ALL_SAMPLES_NAMES[${SLURM_ARRAY_TASK_ID}]}
+echo ${sample}
 
 ##-------------------------------------------------------------------------
 
@@ -39,7 +49,7 @@ run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_
 run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_sorted.sam ${WKD_ROOT}/4_tclean
 
 # re-align reads
-pbmm2 align ${WKD_ROOT}/4_tclean/${sample} ${WKD_ROOT}/5_cupcake/5_align
+run_pbmm2 ${WKD_ROOT}/4_tclean/${sample}/${sample}_clean.fa ${WKD_ROOT}/5_cupcake/5_align
 
 # filter_alignment <input_name> <input_mapped_dir>
 # output = ${sample}_mapped.filtered.bam, ${sample}_mapped.filtered.sorted.bam
