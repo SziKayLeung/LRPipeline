@@ -9,7 +9,7 @@
 #SBATCH --mem=200G # specify bytes of memory to reserve
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
-##SBATCH --array=0-8418%50 ## uncomment and set number of jobs (number of fastq files if running script separately)
+#SBATCH --array=0-19
 #SBATCH --output=1_demux_porechop-%A_%a.o
 #SBATCH --error=1_demux_porechop-%A_%a.e
 
@@ -24,16 +24,29 @@ module load Miniconda2/4.3.21
 source activate lrp
 source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
+# load config file provided on command line when submitting job
+# Check if a config file was provided on the command line
+if [ -z "$1" ]; then
+    echo "Error: No config file provided."
+    exit 1
+fi
+echo "Loading config file for project: $1" 
+source $1
 
 ##-------------------------------------------------------------------------
 
-SamplePath=${raw_merged_fastq_files[${SLURM_ARRAY_TASK_ID}]}
-Sample=$(basename ${SamplePath} .fastq.gz)
+splitFastq=($(ls ${WKD_ROOT}/1_demultiplex/split/splitfastq*))
+SamplePath=${splitFastq[${SLURM_ARRAY_TASK_ID}]}
+Sample=$(basename ${SamplePath} .txt)
+
+echo "Merging fastq from ${SamplePath}"
+cat $(grep -v '^#' ${SamplePath}) > ${WKD_ROOT}/1_demultiplex/split/${Sample}.fastq
 
 echo "Processing ${Sample}"
 
 # 3) run_porechop <raw.fastq.gz> <output_dir>
-run_porechop ${SamplePath} ${WKD_ROOT}/1_demultiplex/${Sample} > ${WKD_ROOT}/1b_demultiplex_merged/log/${Sample}.log
+splitFastqPath=${WKD_ROOT}/1_demultiplex/split/${Sample}.fastq
+run_porechop ${splitFastqPath} ${WKD_ROOT}/1_demultiplex/split/${Sample} > ${WKD_ROOT}/1b_demultiplex_merged/log/${Sample}.log
 
 
 ##-------------------------------------------------------------------------
