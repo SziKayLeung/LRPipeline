@@ -19,7 +19,8 @@ echo Job started on:
 date -u
 
 # load config file provided on command line when submitting job
-echo "Loading config file for project: " source $1
+echo "Loading config file for project: $1" 
+source $1
 
 if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
   if [ "${SEQUENCING}" == "targeted" ]; then
@@ -35,8 +36,12 @@ else
   echo "Demultiplexing already performed"
 fi
 
-# cuptadapt, minimap, Transcriptclean
-jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
+if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
+  # cuptadapt, minimap, Transcriptclean
+  jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
+else
+  jobid2=$(sbatch ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
+fi
 
 # isoseq-collapse, sqanti3
 sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/3_merged_collapse_sqanti3.sh
