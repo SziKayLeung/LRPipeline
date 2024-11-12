@@ -15,8 +15,10 @@ run_merge(){
 # convertfasta2fastq <input_fastq> <output_fasta>
 convertfasta2fastq(){
 
-  source activate nanopore
-  seqtk seq -A $1 > $2
+  if [ ! -f $2 ]; then 
+    source activate nanopore
+    seqtk seq -A $1 > $2
+  fi 
 }
 
 merge_fastq_across_samples(){
@@ -25,26 +27,31 @@ merge_fastq_across_samples(){
   input_dir=$2
   output_dir=$3
   
-  echo "Merging ${gval}"
+  if [ -f ${output_dir}/${gval}_merged.fastq ]; then
+    echo "${gval} already merged"
   
-  fastq=$(ls ${input_dir}/${gval}/*fa* 2>/dev/null)
-  num_files=$(echo "$fastq" | wc -w)
-  echo "Number of files to concatenate: $num_files"
-  echo "$fastq" > ${output_dir}/${gval}_file_list.txt
-  
-  # Check if the files are gzipped or plain fastq
-  if echo "$fastq" | grep -q ".gz$"; then
-    # If files are gzipped, concatenate and output as gzipped
-    echo "Concatenating gzipped files and unzip..."
-    zcat $fastq > ${output_dir}/${gval}_merged.fastq
   else
-    # If files are not gzipped, concatenate as plain fastq
-    echo "Concatenating fastq files..."
-    cat $fastq > ${output_dir}/${gval}_merged.fastq
-  fi
+    echo "Merging ${gval}"
+    
+    fastq=$(ls ${input_dir}/${gval}/*fa* 2>/dev/null)
+    num_files=$(echo "$fastq" | wc -w)
+    echo "Number of files to concatenate: $num_files"
+    echo "$fastq" > ${output_dir}/${gval}_file_list.txt
+    
+    # Check if the files are gzipped or plain fastq
+    if echo "$fastq" | grep -q ".gz$"; then
+      # If files are gzipped, concatenate and output as gzipped
+      echo "Concatenating gzipped files and unzip..."
+      zcat $fastq > ${output_dir}/${gval}_merged.fastq
+    else
+      # If files are not gzipped, concatenate as plain fastq
+      echo "Concatenating fastq files..."
+      cat $fastq > ${output_dir}/${gval}_merged.fastq
+    fi
 
-  source activate nanopore
-  seqkit stats ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
+    source activate nanopore
+    seqkit stats ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
+  fi 
 }
 
 # 2) run_QC <sample> <sequencing_summary> <bam_input> <output_dir>
@@ -87,33 +94,40 @@ post_porechop_run_cutadapt(){
   input_dir=$(dirname $1)
   name=$(basename $1 .fastq)
   
-  source activate nanopore 
+  if [ $2/${name}_combined.fasta ]; then
+    echo "$name already aligned"
   
-  # requires fasta files for downstream
-  echo "Converting $1 to fasta"
-  seqtk seq -a $1 > ${input_dir}/${name}.fasta
+  else
   
-  # subset fasta file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
-  # reads that end with AAAAAAAAAA = plus reads 
-  # reads that start with TTTTTTTTTT = minus reads (need to be reverse complemented)
-  echo "Subsetting fasta to polyA and polyT sequences"
-  python ${SUBSETPOLYTAILS} --fa ${input_dir}/${name}.fasta --o_name ${name} --o_dir $2
+    source activate nanopore 
+    
+    # requires fasta files for downstream
+    echo "Converting $1 to fasta"
+    seqtk seq -a $1 > ${input_dir}/${name}.fasta
+    
+    # subset fasta file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
+    # reads that end with AAAAAAAAAA = plus reads 
+    # reads that start with TTTTTTTTTT = minus reads (need to be reverse complemented)
+    echo "Subsetting fasta to polyA and polyT sequences"
+    python ${SUBSETPOLYTAILS} --fa ${input_dir}/${name}.fasta --o_name ${name} --o_dir $2
+    
+    # working in output directory
+    cd $2
+    
+    # reverse complement minus reads (reads ending with polyT)
+    seqtk seq -r ${name}_PolyT.fasta > ${name}_PolyT_rev.fasta
+    
+    # use cutadapt package to trim polyA
+    echo "Remove polyA sequences using cutadapt"
+    cutadapt -a "A{60}" ${name}_PolyA.fasta -o ${name}_PolyA_cutadapted.fasta &> ${name}_polyA_cutadapt.log
+    cutadapt -a "A{60}" ${name}_PolyT_rev.fasta -o ${name}_PolyT_rev_cuptadapted.fasta &> ${name}_polyT_cutadapt.log
+    
+    # concatenated reverse minus polyT and polyA reads
+    cat ${name}_PolyA_cutadapted.fasta ${name}_PolyT_rev_cuptadapted.fasta > ${name}_combined.fasta
+    
+    source deactivate
   
-  # working in output directory
-  cd $2
-  
-  # reverse complement minus reads (reads ending with polyT)
-  seqtk seq -r ${name}_PolyT.fasta > ${name}_PolyT_rev.fasta
-  
-  # use cutadapt package to trim polyA
-  echo "Remove polyA sequences using cutadapt"
-  cutadapt -a "A{60}" ${name}_PolyA.fasta -o ${name}_PolyA_cutadapted.fasta &> ${name}_polyA_cutadapt.log
-  cutadapt -a "A{60}" ${name}_PolyT_rev.fasta -o ${name}_PolyT_rev_cuptadapted.fasta &> ${name}_polyT_cutadapt.log
-  
-  # concatenated reverse minus polyT and polyA reads
-  cat ${name}_PolyA_cutadapted.fasta ${name}_PolyT_rev_cuptadapted.fasta > ${name}_combined.fasta
-  
-  source deactivate
+  fi
 }
 
 
@@ -123,30 +137,44 @@ post_porechop_run_cutadapt(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_minimap2(){
 
-  source activate nanopore
   name=$(basename $1 .fasta)
-  echo "Aligning ${name} using Minimap2"
-  
-  minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
-  samtools sort -O SAM $2/${name}.sam > $2/${name}_sorted.sam
 
-  htsbox samview -pS $2/${name}_sorted.sam > $2/${name}.paf
-  awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
-  awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
+  if [ -f $2/${name}_sorted.sam ]; then
+    echo "${name} already aligned"
+  
+  else
+
+    source activate nanopore
+    echo "Aligning ${name} using Minimap2"
+    
+    minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
+    samtools sort -O SAM $2/${name}.sam > $2/${name}_sorted.sam
+  
+    htsbox samview -pS $2/${name}_sorted.sam > $2/${name}.paf
+    awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
+    awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
+  
+  fi
 
 }
 
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
-  
-  source activate sqanti2_py3
    
   name=$(basename $1 _merged_combined_sorted.sam)
-  echo "TranscriptClean ${name}"
   
-  cd $2; mkdir -p ${name}
-  cd $2/${name}
-  python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp
+  if [ -f $2/${name}/${name}_clean.TE.log ]; then
+    echo "${name} already corrected"
+  
+  else
+  
+    source activate sqanti2_py3  
+    echo "TranscriptClean ${name}"  
+    cd $2; mkdir -p ${name}
+    cd $2/${name}
+    python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp
+  
+  fi
 }
 
 
@@ -156,65 +184,81 @@ run_transcriptclean(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_pbmm2(){
   
-  source activate isoseq3
-  name=$(basename $1 _clean.fa)
-  echo "TranscriptClean ${name}"
-  echo "Aligning ${sample}: $1..."
-  echo "Output: $2/${sample}_mapped.bam"
+  if [ -f $2/${name}_mapped.bam ]; then
+    
+    echo "Already re-aligned ${name}"
   
-  cd $2
-  pbmm2 align --preset ISOSEQ --sort ${GENOME_FASTA} $1 ${name}_mapped.bam --log-level TRACE --log-file ${name}_mapped.log
+  else
+  
+    source activate isoseq3
+    name=$(basename $1 _clean.fa)
+    echo "TranscriptClean ${name}"
+    echo "Aligning ${sample}: $1..."
+    echo "Output: $2/${sample}_mapped.bam"
+    
+    cd $2
+    pbmm2 align --preset ISOSEQ --sort ${GENOME_FASTA} $1 ${name}_mapped.bam --log-level TRACE --log-file ${name}_mapped.log
+    
+  fi 
   
 }
 
 
 # filter_alignment <input_name> <input_mapped_dir>
 filter_alignment(){
-  
-  source activate nanopore
-  
-  cd $2
-  echo "Converting bam to sam and sort"
-  samtools view -h $1.bam > $1.sam
-  samtools bam2fq $1.bam| seqtk seq -A > $1.fa
-  samtools sort -O SAM $1.sam > $1.sorted.sam
 
-  # Alignment stats
-  # Use the inforation in the paf file to create a new file where the columns correspond to the following: 
-    #col1: name of the nanopore read 
-    #col2: name of the sequence where nanopore read aligns (target sequence)
-    #col3: start position of the alignment on the target sequence 
-    #col4: length of the original nanopore read 
-    #col5: length of the aligned part of the nanopore read  
-    #col6: fraction of the aligned part of the nanopore read over the orginal length 
-    #col7: fraction of the aligned part of the target sequence over the orginal length of the target sequence
-    #col8: strand where the nanopore read aligns
-    #col8: number of matched nucleotides of the nanopore read alignment on the target sequence
-    #col9: identity (percentage of matched nucleotides over the aligned length of the nanopore read)
-    #col10: number of mismatches of the nanopore read alignment on the target sequence
-    #col11: number of insertions of the nanopore read alignment on the target sequence
-    #col12: number of deletions of the nanopore read alignment on the target sequence
+  if [ -f $2/$1.sorted.sam ]; then
   
-  echo "Dissecting alignment statistics"
-  mkdir -p PAF; cd PAF
-  htsbox samview -pS $2/$1.sorted.sam > $1.paf
-  awk -F'\t' '{if ($6!="*") {print $0}}' $1.paf > $1.filtered.paf
-  awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $1.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $1"_mappedstats.txt"
-  ## filter based on alignable length (>0.85) and identity (>0.95)
-  awk -F'\t' '{if ($6>=0.85 && $8>=0.95) {print $1}}' $1"_mappedstats.txt" > $1_filteredreads.txt
-
-  source activate sqanti2
-  picard FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
+    echo "$1 already filtered"
   
-  source activate nanopore
-  samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
-  samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
+  else
   
-  # https://bioinformatics.stackexchange.com/questions/3380/how-to-subset-a-bam-by-a-list-of-qnames
-  #source activate nanopore
-  #samtools view $2/$1.bam | grep -f $1_filteredreads.txt > $1.filtered.sam
-  #samtools view -bS $1.filtered.sam > $1.filtered.bam
-  #samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
+    source activate nanopore
+    
+    cd $2
+    echo "Converting bam to sam and sort"
+    samtools view -h $1.bam > $1.sam
+    samtools bam2fq $1.bam| seqtk seq -A > $1.fa
+    samtools sort -O SAM $1.sam > $1.sorted.sam
+  
+    # Alignment stats
+    # Use the inforation in the paf file to create a new file where the columns correspond to the following: 
+      #col1: name of the nanopore read 
+      #col2: name of the sequence where nanopore read aligns (target sequence)
+      #col3: start position of the alignment on the target sequence 
+      #col4: length of the original nanopore read 
+      #col5: length of the aligned part of the nanopore read  
+      #col6: fraction of the aligned part of the nanopore read over the orginal length 
+      #col7: fraction of the aligned part of the target sequence over the orginal length of the target sequence
+      #col8: strand where the nanopore read aligns
+      #col8: number of matched nucleotides of the nanopore read alignment on the target sequence
+      #col9: identity (percentage of matched nucleotides over the aligned length of the nanopore read)
+      #col10: number of mismatches of the nanopore read alignment on the target sequence
+      #col11: number of insertions of the nanopore read alignment on the target sequence
+      #col12: number of deletions of the nanopore read alignment on the target sequence
+    
+    echo "Dissecting alignment statistics"
+    mkdir -p PAF; cd PAF
+    htsbox samview -pS $2/$1.sorted.sam > $1.paf
+    awk -F'\t' '{if ($6!="*") {print $0}}' $1.paf > $1.filtered.paf
+    awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $1.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $1"_mappedstats.txt"
+    ## filter based on alignable length (>0.85) and identity (>0.95)
+    awk -F'\t' '{if ($6>=0.85 && $8>=0.95) {print $1}}' $1"_mappedstats.txt" > $1_filteredreads.txt
+  
+    source activate sqanti2
+    picard FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
+    
+    source activate nanopore
+    samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
+    samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
+    
+    # https://bioinformatics.stackexchange.com/questions/3380/how-to-subset-a-bam-by-a-list-of-qnames
+    #source activate nanopore
+    #samtools view $2/$1.bam | grep -f $1_filteredreads.txt > $1.filtered.sam
+    #samtools view -bS $1.filtered.sam > $1.filtered.bam
+    #samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
+  
+  fi
 
 }
 
