@@ -78,7 +78,7 @@ export ANNOTATION=$CUPCAKE/annotation
 export SEQUENCE=$CUPCAKE/sequence
 export PYTHONPATH=$PYTHONPATH:$SEQUENCE
 export SQANTI3_DIR=${SOFTDIR}/SQANTI3
-
+export SQANTI_JSON=/lustre/projects/Research_Project-MRC190311/scripts/sequencing/longReadseq/SQANTI3-5.1/SQANTI3-5.1/utilities/filter/filter_adapted.json
 
 ## ---------------------------
 
