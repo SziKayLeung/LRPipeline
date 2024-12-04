@@ -1,0 +1,644 @@
+---
+title: "Long-read Sequencing Quality Control Report"
+author: "`r Sys.info()[['user']]`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    fig_caption: yes
+    code_folding: hide
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.align = "center", warning=FALSE, message=FALSE, cache = FALSE)
+```
+
+```{r setup, include=FALSE}
+args<-commandArgs(trailingOnly = TRUE)
+args[1] <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot"
+rootDir <- args[1]
+
+suppressMessages(library("data.table"))
+suppressMessages(library("ggplot2"))
+suppressMessages(library("dplyr"))
+suppressMessages(library("stringr"))
+suppressMessages(library("reshape2"))
+suppressMessages(library("data.table"))
+suppressMessages(library("scales"))
+suppressMessages(library("cowplot"))
+suppressMessages(library("ggfortify"))
+suppressMessages(library("DT"))
+
+studyName = "Human sorted nuclei dataset"
+personSequenced = "Rosie Bamford"
+manifest <- read.csv(paste0(rootDir, "/0_metadata/manifest.csv"))
+
+# utils ercc
+utilsDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/ont_cDNA/utils/"
+ercc_calculation <- read.csv(paste0(utilsDir, "ERCC_calculations.csv"))
+ercc_stats <- read.csv(paste0(utilsDir, "ERCC_Stats.csv"))
+ercc_calculation <- merge(ercc_calculation, ercc_stats, by.x = "ERCC_ID", by.y = "ERCC.ID")
+
+# sensitivity
+source("C:/Users/sl693/Dropbox/Scripts/LOGen/aesthetics_basics_plots/pthemes.R")
+source("C:/Users/sl693/Dropbox/Scripts/LOGen/transcriptome_stats/sample_sensitivity.R")
+source("ERCC_functions.R")
+
+# ERCC files
+ERCC_added = FALSE
+if(isTRUE(ERCC_added)){
+  ERCC_rootDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot/ERCC"
+  ERCC_classFile <- fread(paste0(ERCC_rootDir, "/AlessiaERCC_collapsed_RulesFilter_result_classification.txt"), data.table = FALSE)
+  ERCC_classFile <- ERCC_classFile %>% filter(filter_result == "Isoform") 
+  monoexonic <- ERCC_classFile[ERCC_classFile$subcategory == "mono-exon" & ERCC_classFile$structural_category != "full-splice_match","isoform"]
+  ERCC_classFile <- ERCC_classFile %>% filter(!isoform %in% monoexonic)
+  ERCC_demux <- fread(paste0(ERCC_rootDir, "/demux_fl_count.csv"), data.table = F)
+}
+
+```
+
+# Study Information
+
+This report documents the internal quality control (QC) process of long-read sequencing data generated at the University of Exeter Medical School for the following study:
+
+**Title:** `r studyName`
+
+**Date of QC:** `r format(Sys.Date(), format="%d %B %Y")`
+
+**Species:** `r  unique(manifest$species)` 
+
+**Number of samples:** `r  length(unique(manifest$sample))` 
+
+**Number of individuals:** `r  length(unique(manifest$individual))` 
+
+**Number of flow cells/batch:** `r  length(unique(manifest$batch))` 
+
+**Sample tissue:** `r  unique(manifest$tissue)` 
+
+**Samples sequenced by:** `r  personSequenced` 
+
+**Project data path:** `r rootDir`
+
+## Samples
+
+Below is the full list of samples imported.
+
+```{r manifest, fig.width = 12, fig.height = 6, echo = FALSE}
+# manifest
+datatable(manifest,
+          caption = "Phenotype information",
+          options = list(
+            pageLength = 5,
+            autoWidth = TRUE  # Adjust column widths automatically
+          ))
+
+```
+
+# QC: Sequencing quality  
+
+A series of quality control (QC) sequencing metrics are provided below to aid identification of any patterns behind sample failures, artifacts that should be excluded and/or covariates that may be included in analysis. 
+
+## Sequencing depth
+
+For any given sequencing run (ONT flow cell) where multiplexing is performed, the number of reads obtained per sample post de-multiplexing should ideally be consistent. N50 is defined as the length of the shortest transcript at 50% of the total pool, and should be about ~1.5kb. Any significant variation in sample reads or small N50 are indicative of poor RNA quality. 
+
+```{r demuxStats, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: bar plot shows the number of full-length (FL) reads obtained for each individual after sequencing (pre-alignment)."}
+
+# data-wrangle for readstats.txt for demultiplexed samples
+demuxStats <- lapply(list.files(path = paste0(rootDir, "/1b_demultiplex_merged/"), pattern = "readstats", full = T), function(x) 
+  fread(x, data.table = F))
+demuxStats <- rbindlist(demuxStats, idcol = "sampleNum") %>% mutate(sample = word(file,c(1),sep=fixed("_")))
+demuxStats$num_seqs <- as.numeric(gsub(",", "", demuxStats$num_seqs))
+demuxStats <- merge(demuxStats, manifest, by = "sample") 
+
+# table
+knitr::kable(demuxStats[,c("sample","num_seqs","sum_len","N50")], 
+             col.names = c('sample', 'Number of reads', 'Number of bases', 'N50'),
+             caption = "Table: summary of demultiplexing statistics for each sample, including the number of reads, the total number of bases, and the N50 value."
+)
+
+# plot
+if("cellType" %in% colnames(manifest)){
+  p <- ggplot(demuxStats, aes(x = individual, y = num_seqs, fill = cellType)) 
+}else{
+  p <- ggplot(demuxStats, aes(x = individual, y = num_seqs)) 
+}
+
+p <- p +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(labels = label_comma()) + theme_classic() +
+  labs(x = "Individual", y = "Number of FL reads")
+
+p
+```
+
+## Alignment rate
+
+Post alignment to the reference genome, we are looking for a near-100% alignment identity (proportion of identical bases to the reference transcript) and a near-100% alignment coverage (proportion of bases matching to the reference transcript). While the alignment identity is an inherent measure of the sequencing platform (i.e. basecalling nanopore accuracy), the alignment coverage can provide insights into the sequencing library quality such that a poor alignment coverage could be suggestive of RNA degradation. 
+
+```{r alignedStats, fig.width = 12, fig.height = 6, echo = FALSE}
+
+# input of mapped stats 
+nameAlignedStats <- c(
+  "read_name",                # Name of the nanopore read
+  "target_sequence",          # Name of the target sequence
+  "start_position",           # Start position of the alignment on the target sequence
+  "read_length",              # Length of the original nanopore read
+  "aligned_length",           # Length of the aligned part of the nanopore read
+  "aligned_fraction",         # Fraction of the aligned part of the nanopore read over the original length
+  "matches",                  # Number of matched nucleotides in the alignment
+  "identity_percentage",      # Fraction of matched nucleotides over the aligned length
+  "strand",                   # Strand where the nanopore read aligns
+  "mismatches",               # Number of mismatches in the alignment
+  "insertions",               # Number of insertions in the alignment
+  "deletions"                 # Number of deletions in the alignment
+)
+mappedStats <- lapply(list.files(path = paste0(rootDir, "/3_minimap/"), pattern = "mapped", full = T), function(x) 
+  fread(x, col.names = nameAlignedStats, data.table = F))
+names(mappedStats) <- list.files(path = paste0(rootDir, "/3_minimap/"), pattern = "mapped")
+mappedStats <- rbindlist(mappedStats, idcol = "file") 
+mappedStats$sample <- str_remove(mappedStats$file, "_merged_combined_mappedstats.txt")
+
+# table
+alignmentStats <- mappedStats %>%
+  group_by(sample) %>%
+  summarise(
+    num_reads = n(),  
+    mean_aligned_fraction = mean(aligned_fraction, na.rm = TRUE),
+    mean_identity_percentage = mean(identity_percentage, na.rm = TRUE)
+  )
+
+knitr::kable(alignmentStats, col.names = c("Sample","number of reads", "aligned coverage", "aligned identity"),
+             caption = "Table: summary of alignment statistics of the number of reads alignmed, the mean aligned coverage and identity of those reads") 
+```
+
+For a transcriptome sequencing library, we are looking for a normal distribution around 1.5kb - 2kb; any peaks are indicative of RNA degradation or standards if added. 
+
+```{r alignedPlot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: distribution of the sample read length post alignment."}
+
+ggplot(mappedStats, aes(x = read_length, fill = sample)) +
+  geom_density(alpha = 0.2) + theme_classic() +
+  labs(x = "Read Length")
+
+```
+
+## Genome coverage
+
+The genome coverage would depend if sequencing was performed on a whole transcriptome level or at a targeted level. 
+
+```{r chromStats, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedrightFigure: number of reads aligned to each chromosome."}
+dat <- mappedStats %>% group_by(sample, target_sequence) %>% tally() %>% 
+  filter(!grepl("_", target_sequence)) %>% as.data.frame()
+
+ggplot(dat, aes(x = as.factor(target_sequence), y = n)) + 
+  geom_boxplot(outliers = FALSE) +
+  geom_point(aes(colour = sample)) +
+  theme_classic() +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = "Chromosome", y = "Number of reads")
+```
+
+## Standards
+
+`r if (ERCC_added) {
+  "
+  The below metrics and plots relate to the detection of added ERCC. These are known molecules that are added to each sample during library preparation before multiplexing, and can be used to infer the library sensitivity and validity of the bioinformatics pipeline. There are 92 ERCC molecules of varying known amounts and length.
+  "
+} else {
+  "No ERCC molecules were added to this sequencing run; QC unavailable."
+}`
+
+
+```{r ERCC, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedrightFigure: number of reads aligned to each chromosome.", eval = ERCC_added}
+ERCC_alignedStats <- read_ERCC_alignedStats(ERCC_rootDir)
+detectedNumERCC <- length(unique(ERCC_alignedStats$target_sequence))
+
+# tally the number of ERCC
+numDetected <- ERCC_alignedStats %>% group_by(sample) %>% tally(name = "number")
+
+# merge back with original number of reads per sample
+numDetected <- merge(demuxStats[,c("sample","num_seqs")], numDetected, by = "sample") %>% 
+  mutate(perc = number/num_seqs * 100)
+
+numDetectedPerSample <- ERCC_alignedStats %>% group_by(sample) %>% summarise(unique_count = n_distinct(target_sequence))
+numDetected <- merge(numDetected, numDetectedPerSample, by = "sample")
+
+knitr::kable(numDetected, col.names = c('Sample', '# demultiplexed reads', '# ERCC reads', "ERCC reads (%)", "# ERCC molecules"), caption = "Number (#) and proportion (%) of ERCC reads per sample")
+
+ERCC_detected <- detect_ERCC(ERCC_alignedStats)
+```
+
+`r if (ERCC_added) {
+  "
+  We expect that the ERCC detected would depend on the amount and not on the length i.e. ERCC with the known higher amounts are more likely to be sequenced, whereas longer ERCC are as likely to be sequenced as the shorter ERCC molecules. We also expect this phenomenon to be consistent across all the samples.
+
+  ### Factors impacting detection
+  "
+}`
+
+
+```{r amount, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the ERCC detected by amount.", eval = ERCC_added}
+p <- plot_amount_length(ERCC_detected)
+p[[1]]
+```
+```{r length, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the ERCC detected by length.", eval = ERCC_added}
+p[[2]]
+```
+
+`r if (ERCC_added) {
+  "### Detection accuracy\n#### Number of isoforms collapsed\n\nFollowing a similar bioinformatics pipeline, aligned ERCC reads are collapsed into unique isoforms and characterised using *SQANTI*. In theory, we should only detect one *isoform* per ERCC molecule. However, in practice, we may detect multiple *isoforms* annotated to the same ERCC molecule due to degradation and shearing during the library preparation."
+}`
+
+
+```{r redundancy1, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: The number of unique isoforms detected per ERCC molecule, coloured by sqanti structural categories", eval = ERCC_added}
+pRedundant <- plot_numIsoforms(ERCC_classFile)
+pRedundant[[1]]
+```
+
+`r if (ERCC_added) {
+  "
+  Notably, the number of *unique isoforms* detected per ERCC molecule is depending on the initial known amounts i.e. the higher the amount of that specific ERCC molecule, the more likely it is to be PCR amplified and sequenced.
+  "
+}`
+
+
+```{r redundancy2, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: The number of unique isoforms detected per ERCC molecule, coloured by sqanti structural categories", eval = ERCC_added}
+pRedundant[[2]]
+```
+
+`r if (ERCC_added) {
+  "
+  #### Isoform proportions
+  
+  Despite the significant number of *unique isoforms*, there should only be one or two **dominant** isoform per ERCC molecule whereby the remaining isoforms are insignificant - i.e. a *minor* isoform, defined by less than 5% of the total proportion.
+  
+  Below are plots of the *isoform* landscape of each ERCC molecule per sample. The number in the grey bar refers to the number of minor ERCC molecules, and the individual lines dissecting the bars refer to the proportion of the major isoform.
+  "
+}`
+
+
+```{r usage, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: bar plots of the isoform usage across each ERCC molecule", eval = ERCC_added}
+
+pUsage <- plot_usage_persample(ERCC_classFile, ERCC_demux)
+pUsage$plots[[1]]
+
+```
+
+```{r usageTable, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE, eval = ERCC_added}
+
+datatable(tabulate_isoformFraction(pUsage),
+          caption = "Table of the number of dominant isoforms detected per ERCC per sample and it's corresponding proportion",
+          filter = "top",     # Add column-specific filters
+          options = list(
+            autoWidth = TRUE,  # Adjust column widths automatically,
+            scrollY = "auto",     # Set vertical scroll height
+            paging = TRUE           # Enable pagination
+          ))
+```
+
+
+# QC: Sample identity
+
+A series of quality control (QC) sequencing metrics are provided below to ensure that the correct samples are assigned to the corresponding barcode/flow cell.
+
+## Sex prediction
+
+We can use the reads aligned to the X and Y chromosome to infer the sex of the samples, by calculating a fold change of the number of reads in the corresponding X and Y chromosome relative to the total reads aligned to the allosomes (X and Y together). 
+- For females, we would expect a near 1 fold-change on the X chromosome and a near 0 fold change on the Y chromosome.  
+- For males, we would expect a near 0.5 fold change on the X chromosome and Y chromosome.   
+
+```{r sexCheck, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: number of reads aligned to X and Y chromosome over total reads aligned to X and Y chromosome"}
+
+# data-wrangle of final filtered reads
+filteredAlignment <- lapply(list.files(path = paste0(rootDir, "/5_cupcake/5_align/PAF"), pattern = "mappedstats", full = T), function(x) 
+  fread(x, data.table = F, col.names = nameAlignedStats))
+names(filteredAlignment) <- list.files(path = paste0(rootDir, "/5_cupcake/5_align/PAF"), pattern = "mappedstats")
+filteredAlignment <- rbindlist(filteredAlignment, idcol = "file") 
+filteredAlignment$sample <- str_remove(filteredAlignment$file, "_mapped_mappedstats.txt")
+
+# X chromosome, Y chromsoome, autosomal reads
+xReads <- filteredAlignment  %>% filter(target_sequence %in% c("chrX")) %>% group_by(sample) %>% tally(name = "chrxReads")
+yReads <- filteredAlignment  %>% filter(target_sequence %in% c("chrY")) %>% group_by(sample) %>% tally(name = "chrYReads")
+autoReads <- filteredAlignment  %>% filter(!target_sequence %in% c("chrX","chrY")) %>% group_by(sample) %>% tally(name = "autoReads")
+
+# fold cange of chrX over all reads, chrY over all reads
+sexCheckReads <- Reduce(function(x, y) merge(x, y, by = "sample", all = TRUE), list(xReads, yReads, autoReads)) %>%
+  mutate(FCX = chrxReads/(chrxReads + chrYReads), FCY = chrYReads/(chrxReads + chrYReads))
+sexCheckReads <- merge(sexCheckReads, manifest, by = "sample")
+
+# plot
+ggplot(sexCheckReads, aes(x = FCX, y = FCY, colour = sex)) +
+  geom_point(size = 3) +
+  theme_classic() +
+  labs(x = "X ratio", y = "Y ratio")
+```
+
+# QC: Data quality
+
+## RT artifacts
+
+As part of the final bioinformatics pipieline, reads are collopsed into transcripts and are filtered by *SQANTI* if they are classified as artifacts in the form of:  
+- intra-priming, defined by high percentage of A downstream of transcription termination site  
+- reverse-transcription switching  
+
+```{r reasonFiltered, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the number of reads classified as artifacts from reverse-transcription step, and subsequently removed"}
+
+# classifiction file with all isoforms and artifacts
+preFilteredClassFileName <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "RulesFilter_result_classification", full = T)
+preFilteredClassFile <- fread(preFilteredClassFileName, data.table = F)
+xaxislevelsF1 <- c("full-splice_match","incomplete-splice_match","novel_in_catalog","novel_not_in_catalog","genic","antisense","fusion","intergenic","genic_intron")
+xaxislabelsF1 <- c("FSM", "ISM", "NIC", "NNC", "Genic_Genomic",  "Antisense", "Fusion","Intergenic", "Genic_Intron")
+preFilteredClassFile$structural_category = factor(preFilteredClassFile$structural_category,
+                                        labels = xaxislabelsF1, 
+                                        levels = xaxislevelsF1,
+                                        ordered=TRUE)
+
+# classification file with mono-exonic isoforms retained
+class_file <- preFilteredClassFile %>% filter(filter_result == "Isoform")
+monoexonic <- class_file[class_file$subcategory == "mono-exon" & class_file$structural_category != "FSM","isoform"]
+class_file <- class_file %>% filter(!isoform %in% monoexonic)
+
+# expression
+demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_demux"), pattern = "demux_fl_count.csv", full = T)
+demux <- fread(demux, data.table = F)
+demuxFiltered  <- demux %>% filter(id %in% class_file$isoform) %>% tibble::column_to_rownames(., var = "id")
+
+# reasons why isoforms filtered
+ReasonFiltered <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "adultSortedNuclei_collapsed_filtering_reasons", full = T)
+ReasonFiltered  <- fread(ReasonFiltered, data.table = F)
+
+# isolate the reads that are corresponding to the artifacts
+artifacts <- preFilteredClassFile[preFilteredClassFile$filter_result == "Artifact","isoform"]
+passedReads <- preFilteredClassFile[preFilteredClassFile$filter_result == "Isoform","isoform"]
+artifactDemux <- demux[demux$id %in% artifacts,] 
+artifactDemux <- merge(artifactDemux, ReasonFiltered[,c("isoform","reasons")], by.x = "id", by.y = "isoform")
+artifactSummary <- artifactDemux %>% 
+  select(-id) %>%
+  group_by(reasons) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+# stepwise stats filtering
+stage1Stats <- demuxStats[,c("sample","num_seqs")]
+stage2Stats <- as.data.frame(mappedStats %>% group_by(sample) %>% tally(name = "aligned_seqs"))
+stage3Stats <- as.data.frame(filteredAlignment %>% group_by(sample) %>% tally(name = "corrected_seqs"))
+stage4Stats <- as.data.frame(demux %>% select(-id) %>% apply(.,2,sum))       
+colnames(stage4Stats) <- "collapsedReads"
+passedReads <- preFilteredClassFile[preFilteredClassFile$filter_result == "Isoform","isoform"] 
+stage5Stats <- as.data.frame(demux %>% filter(id %in% passedReads) %>% select(-id) %>% apply(.,2,sum))              
+colnames(stage5Stats) <- "finalReads"
+# demux file to keep only the finalised isoforms
+stage6Stats <- as.data.frame(demuxFiltered %>% apply(.,2,sum)) 
+colnames(stage6Stats) <- "monoFilteredReads"
+
+# filter demux file
+# Define a custom function to count non-zero elements in a row
+count_non_zero <- function(row) {
+  return(sum(row != 0))
+}
+nreads <- apply(demuxFiltered,1,sum)
+nsample <- apply(demuxFiltered, 1, count_non_zero)
+demuxFiltered$nreads <- nreads
+demuxFiltered$nsample <- nsample
+demuxFiltered <- demuxFiltered %>% filter(nreads >= 2, nsample >= 2)
+
+stage7Stats <- as.data.frame(demuxFiltered %>% select(-nreads, -nsample) %>% apply(.,2,sum)) 
+colnames(stage7Stats) <- "expressionFilteredReads"
+stage4Stats <- merge(manifest[,c("ID","sample")], stage4Stats, by.x = "ID", by.y = 0)
+stage5Stats <- merge(manifest[,c("ID","sample")], stage5Stats, by.x = "ID", by.y = 0)
+stage6Stats <- merge(manifest[,c("ID","sample")], stage6Stats, by.x = "ID", by.y = 0)
+stage7Stats <- merge(manifest[,c("ID","sample")], stage7Stats, by.x = "ID", by.y = 0)
+
+fullStats <- Reduce(function(x, y) merge(x, y, by = "sample", all = TRUE), 
+                    list(stage1Stats, stage2Stats, stage3Stats, stage4Stats, stage5Stats, stage6Stats, stage7Stats)) 
+
+fullStats <- fullStats %>% select(-contains("ID")) %>% 
+  mutate(percCorrectedAligned = corrected_seqs/num_seqs * 100, 
+         percCollapsed = collapsedReads/num_seqs * 100,
+         percFinal = finalReads/num_seqs * 100,
+         percMonofiltered = monoFilteredReads/num_seqs * 100,
+         percExpressionFiltered = expressionFilteredReads/num_seqs * 100) 
+
+fullStats <- merge(fullStats, manifest, by = "sample")
+
+artifactSummary$reasons <- gsub("High perc_A_downstream_TTS", "intra-priming", artifactSummary$reasons)
+artifactSummary$reasons <- gsub("Out RTS_stage", "RT switching", artifactSummary$reasons)
+reshape2::melt(artifactSummary, value.name = "removedFL", variable.name = "ID") %>%
+  merge(., fullStats, by = "ID") %>% 
+  mutate(percRemoved = removedFL/num_seqs * 100) %>% 
+  ggplot(., aes(x = reasons, y = percRemoved)) + 
+  geom_boxplot(outliers = FALSE) +
+  geom_jitter(aes(colour = sample)) + theme_classic() +
+  labs(x = "Reasons filtered", y = "Percentage of reads removed")
+```
+
+## Expression threshold
+
+To reduce false negatives and increase confidence of identifying "true" isoforms, we can apply an expression filter threshold i.e. an isoform is kept only if it has more than 2 reads across any 2 samples.
+
+The below plot shows the proportion of reads retained after applying a step-wise threshold. Each line corresponds to the minimum number of reads and the x-axis refers to the minimum number of samples. 
+
+```{r sensitivity, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Line plot of the number of reads retained post SQANTI filtering after applying an expression threshold"}
+
+demuxFiltered  <- demux %>% filter(id %in% class_file$isoform) %>% tibble::column_to_rownames(., var = "id")
+
+sensitivity <- demuxFiltered 
+colnames(sensitivity) <- paste0("FL.", colnames(sensitivity))
+sensitivtyOutput <- no_of_isoforms_sample(sensitivity)
+sensitivtyOutput[[3]]$cate_sumFL <- categories(as.numeric(as.character(sensitivtyOutput[[3]]$sum_FL)))
+
+dat2 <- sensitivtyOutput[[3]] %>%
+  group_by(num_samples, cate_sumFL) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(proportion = count / sum(count)) %>%
+  mutate(cate_sumFL = factor(cate_sumFL, levels = c(seq(1:9),"10","10-20","21-30","31-40","41-50","> 50")))
+
+ggplot(dat2, aes(x = as.factor(num_samples), y = proportion, colour = cate_sumFL, group = cate_sumFL)) +
+  geom_point() +
+  geom_line() + scale_y_continuous(labels = perc_lab)  + 
+  labs(x = "Minimum number of samples", y = "Reads (%)",
+       colour = "Minimum number of reads") +
+  theme_classic() 
+  
+```
+
+# QC: Sample reproducibility
+
+We anticipate that while the number of reads may differ across the samples, the extent of reads retained after each processing step will be consistent. Any deviations will suggest a sample/batch failure. 
+
+The plot displays the proportion of reads in each sample **retained** after the following steps:  
+    1. Alignment and correction  
+    2. Collapsing reads to transcripts  
+    3. Filtering reads for RT artifacts  
+    4. Removing mono-exonic non-FSM reads  
+    5. Applying a minimum expression threshold  
+
+```{r fullStats, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: proportion of reads retained after each processing/filtering stage"}
+fullStatsPlot <- fullStats %>% select(sample, contains("perc")) %>% 
+  reshape2::melt(variable.name = "stage", value.name = "perc") %>% 
+  filter(perc != "NA") 
+
+xaxislevelsF1 <- c("percCorrectedAligned","percCollapsed","percFinal","percMonofiltered", "percExpressionFiltered")
+xaxislabelsF1 <- c("Alignment", "Collapse", "SQANTI filtering", "monoexonic filtering", "Expression filtering")
+fullStatsPlot$stage = factor(fullStatsPlot$stage,
+                             labels = xaxislabelsF1, 
+                             levels = xaxislevelsF1,
+                             ordered=TRUE)
+
+ggplot(fullStatsPlot , aes(x = stage, y = perc, group = sample, colour = sample)) +
+  geom_point() +
+  geom_line() +
+  theme_classic() + 
+  labs(y = "Percentage of reads", x = "Stage") +
+  ylim(0,100)
+```
+
+# QC: Biological validity
+
+The following sections assess whether the samples sequenced reflect biological phenomena and if there are any covariates that should be accounted in downstream analysis. 
+
+## Principle component analysis
+
+```{r pca, fig.width = 12, fig.height = 6, echo = FALSE}
+
+res <- as.data.frame(t(demuxFiltered)) 
+pca_res <- prcomp(as.matrix(res), scale. = TRUE)
+pca.scores <- as.data.frame(pca_res$x)
+pca_res.pca <- pca_res$sdev^2/sum(pca_res$sdev^2)
+pca_res.finalpca <- pca.scores[,which(pca_res.pca > 0.01)]
+
+```
+
+To identify and visually inspect potential outliers we performed principal component analysis on the number of read counts across the isoforms in the final dataset. We identified `r nrow(pca.scores[,which(pca_res.pca > 0.01)])` PCs which explained > 1% of the variance and focused on these for characterisation. 
+
+
+```{r pca_overallplot, fig.width = 12, fig.height = 6, echo = FALSE}
+res <- as.data.frame(t(demuxFiltered)) 
+pca_res <- prcomp(as.matrix(res), scale. = TRUE)
+pca.scores <- as.data.frame(pca_res$x)
+pca_res.pca <- pca_res$sdev^2/sum(pca_res$sdev^2)
+pca_res.finalpca <- pca.scores[,which(pca_res.pca > 0.01)]
+
+par(mar = c(4,4,1,1))
+pca_var_explained <- (pca_res$sdev^2 / sum(pca_res$sdev^2)) * 100
+plot(1:20, pca_var_explained[1:20], type = "b", ylab = "% variance explained", xlab = "Principal Components")
+abline(h=1, col = "red")
+```
+
+```{r pca_plot, fig.width = 12, fig.height = 4, echo = FALSE}
+# Extract PC1 and PC2 scores
+pca.scores$cellType <- manifest[match(row.names(pca.scores), manifest$ID), "cellType"]         # Add cellType as a column
+pca.scores$sex <- manifest[match(row.names(pca.scores), manifest$ID), "sex"]         # Add cellType as a column
+pca.scores$individual <- manifest[match(row.names(pca.scores), manifest$ID), "individual"]         # Add cellType as a column
+
+# List of grouping variables (e.g., factors for coloring)
+group_vars <- c("cellType", "sex", "individual")
+
+# List of PC combinations to plot
+pc_combinations <- list(
+  c("PC1", "PC2"),
+  c("PC1", "PC3")
+)
+
+# Loop through group variables and PC combinations
+PCA_plots <- list()
+count=1
+for (group_var in group_vars) {
+  for (pc_pair in pc_combinations) {
+    x_pc <- pc_pair[1]
+    y_pc <- pc_pair[2]
+    
+    # Dynamically generate plot
+    p <- ggplot(pca.scores, aes_string(x = x_pc, y = y_pc, color = group_var)) +
+      geom_point(size = 3) + 
+      labs(
+        title = paste0("Coloured by ", group_var),
+        subtitle = paste("PCA:", x_pc, "vs", y_pc),
+        x = paste("Principal Component", substr(x_pc, 3, 3)),
+        y = paste("Principal Component", substr(y_pc, 3, 3))
+      ) +
+      theme_classic() +
+      scale_color_brewer(palette = "Set2")
+    
+    # Print the plot
+    PCA_plots[[count]] <- p
+    count = count + 1
+  }
+}
+
+for (i in seq(1, length(PCA_plots), by = 2)) {
+  # Select the next 2 plots (if available)
+  current_plots <- PCA_plots[i:min(i + 1, length(PCA_plots))] 
+  
+  # Print the 2 plots in a grid layout
+  print(plot_grid(plotlist = current_plots, ncol = 2))
+}
+
+```
+
+## Normalisation
+
+```{r normalisation, fig.width = 12, fig.height = 6, echo = FALSE}
+
+# calculate TPM 
+# https://github.com/ConesaLab/SQANTI3/wiki/Running-SQANTI3-Quality-Control
+# raw FL read for transcript in sample 1/total FL transcript in sample 1 * 10^6
+demuxCollapsed <- demux %>% filter(id %in% preFilteredClassFile$isoform)
+row.names(demuxCollapsed) <- demux$id
+demuxTPM <- apply(demuxCollapsed %>% select(-id),2,function(x){x/sum(x) * 1000000})
+demuxFilteredTPM <- apply(demuxFiltered,2,function(x){x/sum(x) * 1000000})
+
+```
+
+## Gene expression
+
+We expect the gene expression of house keeping genes to be consistent across all samples, and differences in cell-specific genes for sorted populations.
+
+```{r geneCellExpressions, fig.width = 12, fig.height = 6, echo = FALSE}
+plot_geneExp <- function(gene){
+  gclass_file <- preFilteredClassFile %>% filter(associated_gene == gene) %>% select(isoform, associated_gene)
+  
+  geneExp <- merge(gclass_file, demuxTPM, by.x = "isoform", by.y = 0) %>% 
+    select(-isoform,-associated_gene) %>%
+    apply(., 2, sum) %>% 
+    reshape2::melt(value.name = "exp") 
+  
+  geneExp <- merge(manifest, geneExp, by.x = "ID", by.y = 0)
+  geneExp <<- geneExp  
+  
+  if("cellType" %in% colnames(manifest)){
+  p <- ggplot(geneExp, aes(x = cellType, y = exp)) + geom_boxplot(outliers = FALSE) + 
+    geom_jitter(size = 3, aes(colour = individual)) + 
+    theme_classic() + 
+    labs(x = "Sorted populations", y = "Expression", title = gene)
+  }
+  
+  return(p)
+}
+
+housekeepingGene <- c("GAPDH")
+plot_geneExp("GAPDH")
+
+```
+
+### Cell-specific genes
+
+```{r neuronalExpression, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: neuronal-specific gene expressions"}
+
+if("cellType" %in% colnames(manifest)){
+  NeuronalGenes <- c("CABP1","PRRG3","RBFOX3","ENO2")
+  NeuonralGenePlots <- lapply(NeuronalGenes, function(gene) plot_geneExp(gene))
+  plot_grid(plotlist = NeuonralGenePlots)
+}else{
+  message("FANS not performed; cell-specific gene plots subsequently not displayed")
+}
+```
+
+```{r oligoCellExpressions, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: oligodendrocyte-specific gene expressions"}
+
+OligoGenes <-  c("SOX10", "OPALIN","ST18","OLIG1")
+OligoGenePlots <- lapply(OligoGenes, function(gene) plot_geneExp(gene))
+plot_grid(plotlist = OligoGenePlots)
+
+```
+
+
