@@ -2,7 +2,7 @@
 #SBATCH --export=ALL # export all environment variables to the batch job
 #SBATCH -D . # set working directory to .
 #SBATCH -p mrcq # submit to the parallel queue
-#SBATCH --time=10:00:00 # maximum walltime for the job
+#SBATCH --time=50:00:00 # maximum walltime for the job
 #SBATCH -A Research_Project-MRC148213 # research project to submit under
 #SBATCH --nodes=1 # specify number of nodes
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
@@ -19,7 +19,6 @@ date -u
 # source config and function
 module load Miniconda2/4.3.21
 source activate lrp
-source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
 # load config file provided on command line when submitting job
 # Check if a config file was provided on the command line
@@ -27,8 +26,10 @@ if [ -z "$1" ]; then
     echo "Error: No config file provided."
     exit 1
 fi
-echo "Loading config file for project: $1" 
-source $1
+config=$(realpath "$1")
+echo "Loading config file for project: ${config}" 
+source ${config}
+source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
 sample=${ALL_SAMPLES_NAMES[${SLURM_ARRAY_TASK_ID}]}
 echo ${sample}
@@ -36,7 +37,9 @@ echo ${sample}
 ##-------------------------------------------------------------------------
 
 # merge each sample into one fastq file 
-merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
+if [ "${MERGE_FASTQ}" == TRUE ]; then
+	merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
+fi
 
 if [ "${ORIENTATE}" = TRUE ]; then
     # delinate polyA and polyT sequences, reverse complement polyT sequences, remove polyA from all sequences
