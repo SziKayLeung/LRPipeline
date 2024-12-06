@@ -20,8 +20,6 @@ date -u
 # source config and function
 module load Miniconda2/4.3.21
 source activate nanopore
-source ${SCRIPT_ROOT}/processing/01_source_functions.sh
-export dir=$WKD_ROOT/5_cupcake
 
 # load config file provided on command line when submitting job
 if [ -z "$1" ]; then
@@ -30,7 +28,8 @@ if [ -z "$1" ]; then
 fi
 echo "Loading config file for project: $1" 
 source $1
-
+source ${SCRIPT_ROOT}/processing/01_source_functions.sh
+export dir=$WKD_ROOT/5_cupcake
 
 ##-------------------------------------------------------------------------
 

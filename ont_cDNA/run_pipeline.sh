@@ -38,7 +38,7 @@ fi
 
 if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
   # cuptadapt, minimap, Transcriptclean
-  jobid2=$(sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
+  jobid2=$(sbatch -array=0-$((numSamples - 1)) --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh | awk '{print $NF}')
 else
   jobid2=$(sbatch ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
 fi
