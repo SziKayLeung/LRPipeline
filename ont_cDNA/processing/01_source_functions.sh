@@ -28,12 +28,19 @@ merge_fastq_across_samples(){
   output_dir=$3
   
   if [ -f ${output_dir}/${gval}_merged.fastq ]; then
+    echo ${output_dir}/${gval}_merged.fastq
     echo "${gval} already merged"
   
   else
     echo "Merging ${gval}"
     
-    fastq=$(ls ${input_dir}/${gval}/*fa* 2>/dev/null)
+    if [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ]; then
+        fastq=$(find "$input_dir" -type f -name "*${gval}*")
+    else
+        fastq=$(ls "${input_dir}/${gval}"/*fa* 2>/dev/null)
+    fi
+
+    
     num_files=$(echo "$fastq" | wc -w)
     echo "Number of files to concatenate: $num_files"
     echo "$fastq" > ${output_dir}/${gval}_file_list.txt
@@ -50,7 +57,7 @@ merge_fastq_across_samples(){
     fi
 
     source activate nanopore
-    seqkit stats ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
+    seqkit stats -a ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
   fi 
 }
 
@@ -94,7 +101,8 @@ post_porechop_run_cutadapt(){
   input_dir=$(dirname $1)
   name=$(basename $1 .fastq)
   
-  if [ $2/${name}_combined.fasta ]; then
+  if [ -f $2/${name}_combined.fasta ]; then
+    echo $2/${name}_combined.fasta
     echo "$name already aligned"
   
   else
@@ -172,7 +180,7 @@ run_transcriptclean(){
     echo "TranscriptClean ${name}"  
     cd $2; mkdir -p ${name}
     cd $2/${name}
-    python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp
+    python ${TCLEAN} --sam $1 --genome ${GENOME_FASTA} --outprefix $2/${name}/${name} --tmpDir $2/${name}/${name}_tmp --maxLenIndel=10
   
   fi
 }
@@ -304,10 +312,10 @@ run_sqanti3(){
   echo ${GENOME_GTF}
   echo ${GENOME_FASTA}
   
-  #python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
-  #--CAGE_peak ${CAGE_PEAK} \
-  #--polyA_motif_list ${POLYA} \
-  #--genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+  python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
+  --CAGE_peak ${CAGE_PEAK} \
+  --polyA_motif_list ${POLYA} --skipORF \
+  --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
   
   echo "Processing Sample ${name} for SQANTI filter"
   python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
