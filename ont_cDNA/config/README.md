@@ -5,7 +5,8 @@ To run the bioinformatics pipeline, a config file of the file paths and paramete
 ### Arguments to specify the pipeline
 
 -  `export MULTIPEXING=<TRUE><FALSE>` to specify if de-multiplexing is required
-    - `TRUE` if more than one sample was sequenced on one flow cell, or de-multiplexing has already been performed
+    - `TRUE` if more than one sample was sequenced on one flow cell
+    - `FALSE` if only one sample sequenced on one flow cell or de-multiplexing has already been performed
 
 - `export SEQUENCING=<targeted><whole>` to specify which tool to use for de-multiplexing if `MULTIPLEXING=TRUE`
   - `targeted`: a panel genes were enriched for sequencing, run *porechop*
