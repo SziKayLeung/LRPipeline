@@ -1,0 +1,112 @@
+---
+title: "ERCC QC"
+author: "Szi Kay Leung"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_caption: yes
+---
+
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("data.table")
+library("dplyr")
+library("ggplot2")
+library("cowplot")
+library("DT")
+source("ERCC_functions.R")
+
+```
+
+This is a QC report of the ERCC standards added into the sequencing run. 
+
+```{r setup, include=FALSE}
+
+utilsDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/ont_cDNA/utils/"
+ercc_calculation <- read.csv(paste0(utilsDir, "ERCC_calculations.csv"))
+ercc_stats <- read.csv(paste0(utilsDir, "ERCC_Stats.csv"))
+ercc_calculation <- merge(ercc_calculation, ercc_stats, by.x = "ERCC_ID", by.y = "ERCC.ID")
+
+# ERCC files
+ERCC_rootDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot/ERCC"
+ERCC_classFile <- fread(paste0(ERCC_rootDir, "/AlessiaERCC_collapsed_RulesFilter_result_classification.txt"), data.table = FALSE)
+ERCC_classFile <- ERCC_classFile %>% filter(filter_result == "Isoform") 
+monoexonic <- ERCC_classFile[ERCC_classFile$subcategory == "mono-exon" & ERCC_classFile$structural_category != "full-splice_match","isoform"]
+ERCC_classFile <- ERCC_classFile %>% filter(!isoform %in% monoexonic)
+ERCC_demux <- fread(paste0(ERCC_rootDir, "/demux_fl_count.csv"), data.table = F)
+```
+
+
+## Detection quality
+
+```{r ERCCA_alignedStats, echo = FALSE}
+ERCC_alignedStats <- read_ERCC_alignedStats(ERCC_rootDir)
+detectedNumERCC <- length(unique(ERCC_alignedStats$target_sequence))
+numDetected <- ERCC_alignedStats %>% group_by(sample) %>% tally(name = "number")
+numDetectedPerSample <- ERCC_alignedStats %>% group_by(sample) %>% summarise(unique_count = n_distinct(target_sequence))
+
+numDetected <- merge(numDetected, numDetectedPerSample, by = "sample")
+knitr::kable(numDetected, col.names = c('sample', 'Number of ERCC reads', 'Number of ERCC molecules'),
+             caption = "Number of ERCC reads per sample")
+
+ERCC_detected <- detect_ERCC(ERCC_alignedStats)
+```
+
+
+Across the 92 ERCC molecules, a total of `r detectedNumERCC` (`r round(detectedNumERCC/92 * 100,2)`%) were detected. We expect that the ERCC detected would depend on the amount and not on the  length i.e. ERCC with the known higher amounts are more likely to be sequenced, whereas longer ERCC are as likely to be sequenced as the shorter ERCC molecules. We also expect this phenomenon to be consistent across all the samples.
+
+
+### Factors impacting detection
+
+```{r amount, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the ERCC detected by amount."}
+p <- plot_amount_length(ERCC_detected)
+p[[1]]
+```
+```{r length, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the ERCC detected by length."}
+p[[2]]
+```
+
+### Detection accuracy
+#### Number of isoforms collapsed
+
+Following a similar bioinformatics pipeline, aligned ERCC reads are collapsed into unique isoforms and characterised using *SQANTI*. In theory, we should only detect one *isoform* per ERCC molecule. However, in practice, we may detect multiple *isoforms* annotated to the same ERCC molecule due to degradation and shearing during the library preparation. 
+
+```{r redundancy1, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: The number of unique isoforms detected per ERCC molecule, coloured by sqanti structural categories"}
+pRedundant <- plot_numIsoforms(ERCC_classFile)
+pRedundant[[1]]
+```
+
+Notably, the number of *unique isoforms* detected per ERCC molecule is depending on the initial known amounts i.e. the higher the amount of that specific ERCC molecule, the more likely it is to be PCR amplified and sequenced.
+
+```{r redundancy2, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: The number of unique isoforms detected per ERCC molecule, coloured by sqanti structural categories"}
+pRedundant[[2]]
+```
+
+#### Isoform proportions
+
+Despite the significant number of *unique isoforms*, there should only be one or two **dominant** isoform per ERCC molecule whereby the remaining isoforms are insignficant - i.e. a *minor* isoform, defined by less than 5% of the total proportion.
+
+Below are plots of the *isoform* landscape of each ERCC molecule per sample. 
+
+```{r usage, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: bar plots of the isoform usage across each ERCC molecule"}
+
+pUsage <- plot_usage_persample(ERCC_classFile, ERCC_demux)
+for(p in pUsage$plots){
+  print(p)
+}
+
+```
+
+```{r usageTable, fig.width = 12, fig.height = 6, echo = FALSE, warning = FALSE}
+
+datatable(tabulate_isoformFraction(pUsage),
+          caption = "Table of the number of dominant isoforms detected per ERCC per sample and it's corresponding proportion",
+          filter = "top",     # Add column-specific filters
+          options = list(
+            pageLength = 10,   # Number of rows per page
+            autoWidth = TRUE  # Adjust column widths automatically
+          ))
+```
