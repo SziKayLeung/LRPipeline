@@ -1,3 +1,4 @@
+source activate lrp 
 
 # 1) run_merge <raw_directory> <sample_output_name>
 # output: <sample_output_name>.merged.fastq 
@@ -16,7 +17,6 @@ run_merge(){
 convertfasta2fastq(){
 
   if [ ! -f $2 ]; then 
-    source activate nanopore
     seqtk seq -A $1 > $2
   fi 
 }
@@ -55,8 +55,7 @@ merge_fastq_across_samples(){
       echo "Concatenating fastq files..."
       cat $fastq > ${output_dir}/${gval}_merged.fastq
     fi
-
-    source activate nanopore
+    
     seqkit stats -a ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
   fi 
 }
@@ -82,7 +81,7 @@ run_QC(){
 run_porechop(){
 
     sample=$(basename $1)
-    
+
     echo "Processing Sample $sample for Porechop"
     python ${PORECHOP} -i $1 -b $2 --format fastq --threads 16 \
       --check_reads 1000 \
@@ -106,8 +105,6 @@ post_porechop_run_cutadapt(){
     echo "$name already aligned"
   
   else
-  
-    source activate nanopore 
     
     # requires fasta files for downstream
     echo "Converting $1 to fasta"
@@ -133,8 +130,6 @@ post_porechop_run_cutadapt(){
     # concatenated reverse minus polyT and polyA reads
     cat ${name}_PolyA_cutadapted.fasta ${name}_PolyT_rev_cuptadapted.fasta > ${name}_combined.fasta
     
-    source deactivate
-  
   fi
 }
 
@@ -151,8 +146,7 @@ run_minimap2(){
     echo "${name} already aligned"
   
   else
-
-    source activate nanopore
+  
     echo "Aligning ${name} using Minimap2"
     
     minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
@@ -176,7 +170,6 @@ run_transcriptclean(){
   
   else
   
-    source activate sqanti2_py3  
     echo "TranscriptClean ${name}"  
     cd $2; mkdir -p ${name}
     cd $2/${name}
@@ -198,7 +191,6 @@ run_pbmm2(){
   
   else
   
-    source activate isoseq3
     name=$(basename $1 _clean.fa)
     echo "TranscriptClean ${name}"
     echo "Aligning ${sample}: $1..."
@@ -220,8 +212,6 @@ filter_alignment(){
     echo "$1 already filtered"
   
   else
-  
-    source activate nanopore
     
     cd $2
     echo "Converting bam to sam and sort"
@@ -253,15 +243,11 @@ filter_alignment(){
     ## filter based on alignable length (>0.85) and identity (>0.95)
     awk -F'\t' '{if ($6>=0.85 && $8>=0.95) {print $1}}' $1"_mappedstats.txt" > $1_filteredreads.txt
   
-    source activate sqanti2
     picard FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
-    
-    source activate nanopore
     samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
     samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
     
     # https://bioinformatics.stackexchange.com/questions/3380/how-to-subset-a-bam-by-a-list-of-qnames
-    #source activate nanopore
     #samtools view $2/$1.bam | grep -f $1_filteredreads.txt > $1.filtered.sam
     #samtools view -bS $1.filtered.sam > $1.filtered.bam
     #samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
@@ -277,8 +263,6 @@ run_isoseq_collapse(){
   
   directory=$(dirname $1)
   cd ${directory}
-
-  source activate isoseq3
   
   isoseq3 collapse $1 $2"_collapsed.gff" \
     --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
@@ -304,8 +288,7 @@ run_sqanti3(){
   name=$(basename $1 .gff)
 
   cd $2
-  source activate sqanti2_py3
-  
+ 
   # sqanti qc
   echo "Processing Sample ${name} for SQANTI3 QC"
   python $SQANTI3_DIR/sqanti3_qc.py -v
@@ -319,6 +302,5 @@ run_sqanti3(){
   
   echo "Processing Sample ${name} for SQANTI filter"
   python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
-
-  
+ 
 }
