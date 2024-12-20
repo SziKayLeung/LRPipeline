@@ -8,51 +8,91 @@ output:
     number_sections: true
     fig_caption: yes
     code_folding: hide
+params:
+  rootDir: NULL
+  LRPipelineDir: NULL
+  LOGenDir: NULL
+  manifest: NULL
+  ERCCDir: NULL
+  studyName: NULL
 ---
+
 ```{r global_options, include=FALSE}
 knitr::opts_chunk$set(fig.align = "center", warning=FALSE, message=FALSE, cache = FALSE)
+
+# List of required packages
+required_packages <- c("data.table", "ggplot2", "dplyr", "stringr", 
+                       "reshape2", "scales", "cowplot", "ggfortify", "DT", "kableExtra")
+
+# Check if packages are installed, and install missing ones
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, repos='https://cran.uk.r-project.org')
+  }
+}
+
+# load packages
+suppressMessages({
+  lapply(required_packages, library, character.only = TRUE)
+})
+
 ```
 
 ```{r setup, include=FALSE}
-args<-commandArgs(trailingOnly = TRUE)
-args[1] <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot"
-rootDir <- args[1]
+## Working on dropbox
+#rootDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot/"
+#LRPipelineDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/"
+#manifest <- read.csv(paste0(rootDir, "/0_metadata/manifestQC.csv"))
+#ERCCDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot/ERCC"
+#LOGenDir <- "C:/Users/sl693/Dropbox/Scripts/LOGen/"
 
-suppressMessages(library("data.table"))
-suppressMessages(library("ggplot2"))
-suppressMessages(library("dplyr"))
-suppressMessages(library("stringr"))
-suppressMessages(library("reshape2"))
-suppressMessages(library("data.table"))
-suppressMessages(library("scales"))
-suppressMessages(library("cowplot"))
-suppressMessages(library("ggfortify"))
-suppressMessages(library("DT"))
+# rootDir = path to WKD_dir (root directory) of results from running pipeline
+# LRPipelineDir = path to LRPipeline scripts directory 
+# LOGenDir = path to Logen root directory
+# manifest = path to manifest file
+# ERCCDir = path to ERCC root directory if applicable
+rootDir <- paste0(params$rootDir,"/")
+LRPipelineDir <- paste0(params$LRPipelineDir,"/")
+LOGenDir <- paste0(params$LOGenDir,"/")
+ERCCDir <- params$ERCCDir
+manifest <- read.csv(params$manifest)
 
-studyName = "Human sorted nuclei dataset"
-personSequenced = "Rosie Bamford"
-manifest <- read.csv(paste0(rootDir, "/0_metadata/manifest.csv"))
+## ---------------- LOGEN scripts
 
-# utils ercc
-utilsDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/ont_cDNA/utils/"
+# summary
+source(paste0(LOGenDir, "transcriptome_stats/summarise_classfiles.R"))
+
+# sensitivity, saturation
+source(paste0(LOGenDir, "aesthetics_basics_plots/pthemes.R"))
+source(paste0(LOGenDir,"longread_QC/power_calculations.R"))
+source(paste0(LOGenDir,"transcriptome_stats/sample_sensitivity.R"))
+source("ERCC_functions.R")
+
+# references
+geneType <- read.csv(paste0(LOGenDir,"0_utils/references/gencode.v40.annotation.geneannotation_corrected.csv"), header = T)
+
+## ---------------- ERCC 
+
+if(is.null(ERCCDir)){
+  ERCC_added = FALSE
+}else{
+  ERCC_added = TRUE
+  ERCCDir <- paste0(ERCCDir, "/")
+}
+utilsDir <- paste0(LRPipelineDir, "utils/")
 ercc_calculation <- read.csv(paste0(utilsDir, "ERCC_calculations.csv"))
 ercc_stats <- read.csv(paste0(utilsDir, "ERCC_Stats.csv"))
 ercc_calculation <- merge(ercc_calculation, ercc_stats, by.x = "ERCC_ID", by.y = "ERCC.ID")
 
-# sensitivity
-source("C:/Users/sl693/Dropbox/Scripts/LOGen/aesthetics_basics_plots/pthemes.R")
-source("C:/Users/sl693/Dropbox/Scripts/LOGen/transcriptome_stats/sample_sensitivity.R")
-source("ERCC_functions.R")
-
-# ERCC files
-ERCC_added = FALSE
+# ERCC files if true
 if(isTRUE(ERCC_added)){
-  ERCC_rootDir <- "C:/Users/sl693/Dropbox/Scripts/LRPipeline/vignette/pilot/ERCC"
-  ERCC_classFile <- fread(paste0(ERCC_rootDir, "/AlessiaERCC_collapsed_RulesFilter_result_classification.txt"), data.table = FALSE)
+  file_path <- paste0(ERCCDir, "/", list.files(ERCCDir, pattern = "RulesFilter_result_classification\\.txt$"))
+  message("Reading in ERCC file", file_path)
+  ERCC_classFile <- fread(file_path, data.table = FALSE)
   ERCC_classFile <- ERCC_classFile %>% filter(filter_result == "Isoform") 
   monoexonic <- ERCC_classFile[ERCC_classFile$subcategory == "mono-exon" & ERCC_classFile$structural_category != "full-splice_match","isoform"]
   ERCC_classFile <- ERCC_classFile %>% filter(!isoform %in% monoexonic)
-  ERCC_demux <- fread(paste0(ERCC_rootDir, "/demux_fl_count.csv"), data.table = F)
+  ERCC_demux <- fread(paste0(ERCCDir, "/demux_fl_count.csv"), data.table = F)
 }
 
 ```
@@ -61,7 +101,7 @@ if(isTRUE(ERCC_added)){
 
 This report documents the internal quality control (QC) process of long-read sequencing data generated at the University of Exeter Medical School for the following study:
 
-**Title:** `r studyName`
+**Title:** `r params$studyName`
 
 **Date of QC:** `r format(Sys.Date(), format="%d %B %Y")`
 
@@ -73,9 +113,9 @@ This report documents the internal quality control (QC) process of long-read seq
 
 **Number of flow cells/batch:** `r  length(unique(manifest$batch))` 
 
-**Sample tissue:** `r  unique(manifest$tissue)` 
+**ERCC added:** `r ERCC_added`
 
-**Samples sequenced by:** `r  personSequenced` 
+**Sample tissue:** `r  unique(manifest$tissue)` 
 
 **Project data path:** `r rootDir`
 
@@ -112,10 +152,11 @@ demuxStats$num_seqs <- as.numeric(gsub(",", "", demuxStats$num_seqs))
 demuxStats <- merge(demuxStats, manifest, by = "sample") 
 
 # table
-knitr::kable(demuxStats[,c("sample","num_seqs","sum_len","N50")], 
+knitr::kable(demuxStats[, c("sample", "num_seqs", "sum_len", "N50")], 
              col.names = c('sample', 'Number of reads', 'Number of bases', 'N50'),
-             caption = "Table: summary of demultiplexing statistics for each sample, including the number of reads, the total number of bases, and the N50 value."
-)
+             caption = "Table: summary of demultiplexing statistics for each sample, including the number of reads, the total number of bases, and the N50 value.") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
 
 # plot
 if("cellType" %in% colnames(manifest)){
@@ -169,16 +210,18 @@ alignmentStats <- mappedStats %>%
   )
 
 knitr::kable(alignmentStats, col.names = c("Sample","number of reads", "aligned coverage", "aligned identity"),
-             caption = "Table: summary of alignment statistics of the number of reads alignmed, the mean aligned coverage and identity of those reads") 
+             caption = "Table: summary of alignment statistics of the number of reads alignmed, the mean aligned coverage and identity of those reads") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
 ```
 
 For a transcriptome sequencing library, we are looking for a normal distribution around 1.5kb - 2kb; any peaks are indicative of RNA degradation or standards if added. 
 
 ```{r alignedPlot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: distribution of the sample read length post alignment."}
 
-ggplot(mappedStats, aes(x = read_length, fill = sample)) +
-  geom_density(alpha = 0.2) + theme_classic() +
-  labs(x = "Read Length")
+ggplot(mappedStats, aes(x = sample, fill = sample, y = read_length)) +
+  geom_violin() + theme_classic() +
+  labs(y = "Read Length (bp)", x = "Sample") +
+  theme(legend.position="none")
 
 ```
 
@@ -210,7 +253,7 @@ ggplot(dat, aes(x = as.factor(target_sequence), y = n)) +
 
 
 ```{r ERCC, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedrightFigure: number of reads aligned to each chromosome.", eval = ERCC_added}
-ERCC_alignedStats <- read_ERCC_alignedStats(ERCC_rootDir)
+ERCC_alignedStats <- read_ERCC_alignedStats(ERCCDir)
 detectedNumERCC <- length(unique(ERCC_alignedStats$target_sequence))
 
 # tally the number of ERCC
@@ -223,7 +266,10 @@ numDetected <- merge(demuxStats[,c("sample","num_seqs")], numDetected, by = "sam
 numDetectedPerSample <- ERCC_alignedStats %>% group_by(sample) %>% summarise(unique_count = n_distinct(target_sequence))
 numDetected <- merge(numDetected, numDetectedPerSample, by = "sample")
 
-knitr::kable(numDetected, col.names = c('Sample', '# demultiplexed reads', '# ERCC reads', "ERCC reads (%)", "# ERCC molecules"), caption = "Number (#) and proportion (%) of ERCC reads per sample")
+knitr::kable(numDetected, 
+             col.names = c('Sample', '# demultiplexed reads', '# ERCC reads', "ERCC reads (%)", "# ERCC molecules"), 
+             caption = "Number (#) and proportion (%) of ERCC reads per sample") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
 
 ERCC_detected <- detect_ERCC(ERCC_alignedStats)
 ```
@@ -344,7 +390,7 @@ As part of the final bioinformatics pipieline, reads are collopsed into transcri
 ```{r reasonFiltered, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the number of reads classified as artifacts from reverse-transcription step, and subsequently removed"}
 
 # classifiction file with all isoforms and artifacts
-preFilteredClassFileName <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "RulesFilter_result_classification", full = T)
+preFilteredClassFileName <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "RulesFilter_result_classification.txt$", full = T)
 preFilteredClassFile <- fread(preFilteredClassFileName, data.table = F)
 xaxislevelsF1 <- c("full-splice_match","incomplete-splice_match","novel_in_catalog","novel_not_in_catalog","genic","antisense","fusion","intergenic","genic_intron")
 xaxislabelsF1 <- c("FSM", "ISM", "NIC", "NNC", "Genic_Genomic",  "Antisense", "Fusion","Intergenic", "Genic_Intron")
@@ -359,7 +405,7 @@ monoexonic <- class_file[class_file$subcategory == "mono-exon" & class_file$stru
 class_file <- class_file %>% filter(!isoform %in% monoexonic)
 
 # expression
-demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_demux"), pattern = "demux_fl_count.csv", full = T)
+demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_collapse"), pattern = "demux_fl_count.csv", full = T)
 demux <- fread(demux, data.table = F)
 demuxFiltered  <- demux %>% filter(id %in% class_file$isoform) %>% tibble::column_to_rownames(., var = "id")
 
@@ -641,4 +687,73 @@ plot_grid(plotlist = OligoGenePlots)
 
 ```
 
+# QC: Saturation 
 
+Below are rarefaction curves of the coverage of RNA isoform diversity by SQANTI's structural category with added samples. We anticipate a plateau of the number of "new" transcripts added with each sequential sample. 
+
+::: note
+The more abundant transcripts are always detected first, so FSM transcripts will also be the first to be detected compared to novel transcripts. 
+:::
+
+```{r saturation_plot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Cumulative number of transcripts with added sample"}
+class_file <- merge(class_file, demuxFiltered, by.x = "isoform", by.y = 0)
+plot_cumulative_added_sample(class_file, demuxFiltered)
+```
+
+# Descriptives
+
+## Transcriptome numbers  
+
+Below is a basic summary of the number of transcripts and genes found in the transcriptome of all the samples.
+
+```{r summary} 
+class_file_annoGenes <- class_file[!grepl("novel", class_file$associated_gene),]
+summary <- descriptives_summary(class_file, class_file_annoGenes)
+knitr::kable(summary, 
+             col.names = c(''),
+             caption = "Table: Summary of transcriptome"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Type of transcripts
+
+```{r geneType, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: number of transcripts by gene type"}
+class_file <- merge(class_file, distinct(geneType[,c("GeneSymbol","Class")]), by.x = "associated_gene", by.y = "GeneSymbol", all.x = T)
+
+class_file %>% group_by(Class) %>% tally() %>% 
+  ggplot(., aes(y = reorder(Class,n), x = n)) + geom_bar(stat = "identity") +
+  scale_x_log10(labels = label_comma()) +
+  labs(x = "number of transcripts", y = "Class") + 
+  theme_classic() 
+
+```
+
+## Top-ranked genes
+
+```{r geneExpression}
+
+dat <- class_file %>% 
+  select(associated_gene, colnames(demuxFiltered)) %>%
+  group_by(associated_gene) %>% 
+  summarise(across(everything(), sum)) %>% 
+  tibble::column_to_rownames(., var = "associated_gene")
+
+meanGeneExp <- as.data.frame(apply(dat, 1, mean))
+colnames(meanGeneExp) <- "Mean_gene_expression"
+meanGeneExp <- meanGeneExp %>% tibble::rownames_to_column(., var = "associated_gene") 
+meanGeneExp <- merge(meanGeneExp, distinct(geneType[,c("GeneSymbol","Class")]), by.x = "associated_gene", by.y = "GeneSymbol", all.x = T) %>% arrange(-Mean_gene_expression)
+
+datatable(meanGeneExp[1:100,],
+          caption = "Top-ranked 100 genes by expression",
+          options = list(
+            pageLength = 5,
+            autoWidth = TRUE  # Adjust column widths automatically
+          ))
+
+```
+
+Session
+```{r sessionInfo}
+sessionInfo()
+```
