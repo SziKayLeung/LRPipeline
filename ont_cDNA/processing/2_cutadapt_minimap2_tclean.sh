@@ -38,23 +38,26 @@ echo ${sample}
 
 # merge each sample into one fastq file 
 if [ "${MERGE_FASTQ}" == TRUE ]; then
-	merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
+    merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
 fi
 
-if [ "${ORIENTATE}" = TRUE ]; then
-    # delinate polyA and polyT sequences, reverse complement polyT sequences, remove polyA from all sequences
+if [ "${DEMULTIPLEX}" == "FALSE" ] && [ "${DEMULTIPLEX_SOFTWARE}" == "Pychopper" ]; then
+    # Run pychopper if DEMULTIPLEX is FALSE and software is Pychopper
+    run_pychopper ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+
+elif [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ] || [ "${SEQUENCING}" == "targeted" ]; then
+    # Run post-processing for Porechop or targeted sequencing
     post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
 
-    # map combined fasta to reference genome
-    run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
-
 else
-    convertfasta2fastq ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged_combined.fasta
-
-    # map combined fasta to reference genome
-    run_minimap2 ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
-
+    # Exit with error if none of the conditions are met
+    echo "Error: Invalid configuration for demultiplexing, check wiki for combinations."
+    exit 1
 fi
+
+# map combined fasta to reference genome
+run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
+
 
 # run transcript clean on aligned reads
 run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_sorted.sam ${WKD_ROOT}/4_tclean
