@@ -19,29 +19,31 @@ echo Job started on:
 date -u
 
 # load config file provided on command line when submitting job
-echo "Loading config file for project: $1" 
-source $1
+config=$(realpath "$1")
+echo "Loading config file for project: ${config}" 
+source ${config}
 
 if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
   if [ "${SEQUENCING}" == "targeted" ]; then
+    
+    ls ${raw_merged_fastq_files}/*fastq* > ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt
+    split -n l/20 -d --additional-suffix=.txt ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt ${WKD_ROOT}/1_demultiplex/split/splitfastq_
     echo "Performed targeted sequencing or use of custom barcodes: using Porechop for demultiplexing primers and barcodes"
-    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh --array=0-$((numfastqfiles - 1))%50 job.cmd | awk '{print $NF}')
+    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh ${config} | awk '{print $NF}')
   else
     echo "Performed whole transcriptome sequencing or use of standard barcodes: using Pychopper for demultiplexing primers and barcodes"
     jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh)
   fi
 else
-  # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder
-  ln -s ${DEMULTIPLEX_DIR} ${WKD_ROOT}/1_demultiplex
+  # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
+  ln -sf ${DEMULTIPLEX_DIR}/* "${WKD_ROOT}/1_demultiplex"
   echo "Demultiplexing already performed"
 fi
 
-if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
-  # cuptadapt, minimap, Transcriptclean
-  jobid2=$(sbatch -array=0-$((numSamples - 1)) --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh | awk '{print $NF}')
-else
-  jobid2=$(sbatch ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh --array=0-$((numSamples - 1)) job.cmd | awk '{print $NF}')
-fi
+jobid2=$(sbatch --array=0-$((numSamples - 1)) --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
 
 # isoseq-collapse, sqanti3
 sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/3_merged_collapse_sqanti3.sh
+
+# QC
+sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/4_QC.sh ${config}
