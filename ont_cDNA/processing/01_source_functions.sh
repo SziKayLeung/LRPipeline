@@ -1,5 +1,8 @@
 source activate lrp 
 
+current_commit_hash=$(git rev-parse HEAD)
+echo "LRPipeline latest git commit hash: $current_commit_hash"
+
 # 1) run_merge <raw_directory> <sample_output_name>
 # output: <sample_output_name>.merged.fastq 
 run_merge(){
@@ -26,7 +29,7 @@ merge_fastq_across_samples(){
   gval=$1
   input_dir=$2
   output_dir=$3
-  
+    
   if [ -f ${output_dir}/${gval}_merged.fastq ]; then
     echo ${output_dir}/${gval}_merged.fastq
     echo "${gval} already merged"
@@ -37,11 +40,18 @@ merge_fastq_across_samples(){
     if [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ]; then
         fastq=$(find "$input_dir" -type f -name "*${gval}*")
     else
-        fastq=$(ls "${input_dir}/${gval}"/*fa* 2>/dev/null)
+        # special characters (like trailing spaces, newline characters, or non-printing characters) needs to be removed to correctly access paths
+        clean_path=$(echo "${input_dir}/${gval}" | tr -cd '\11\12\15\40-\176')
+        echo "$clean_path"
+        fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
     fi
-
     
     num_files=$(echo "$fastq" | wc -w)
+    if [ $num_files -eq 0 ]; then
+        echo "Merging failed"
+        exit 1
+    fi 
+    
     echo "Number of files to concatenate: $num_files"
     echo "$fastq" > ${output_dir}/${gval}_file_list.txt
     
@@ -58,6 +68,7 @@ merge_fastq_across_samples(){
     
     seqkit stats -a ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
   fi 
+  
 }
 
 # 2) run_QC <sample> <sequencing_summary> <bam_input> <output_dir>
@@ -73,6 +84,20 @@ run_QC(){
     pycoQC --summary_file $sequencing_summary --bam_file $bam_input -o $sample"_QC.html"
     Rscript ${MINIONQC} -i $sequencing_summary -s TRUE -o $output_dir
 
+}
+
+# 3) run_pychopper <input_fastq> <output_dir>
+# input: <demultiplexed_merged>.fastq 
+# output: <output_directory>/<sample>_merged_combined.fasta
+run_pychopper(){
+
+  sample=$(basename $1 .fastq)
+  
+  echo "Processing $Sample $sample for Pychopper" 
+
+  pychopper -r $2/${sample}_pychopperReport.pdf $1 $2/${sample}_combined.fastq 2> $2/${sample}_pychopper.log
+  convertfasta2fastq $2/${sample}_combined.fastq $2/${sample}_combined.fasta
+  
 }
 
 # 3) run_porechop <raw.fastq.gz> <output_dir>
