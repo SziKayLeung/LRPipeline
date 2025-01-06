@@ -91,12 +91,20 @@ run_QC(){
 # output: <output_directory>/<sample>_merged_combined.fasta
 run_pychopper(){
 
-  sample=$(basename $1 .fastq)
+  name=$(basename $1 .fastq)
   
-  echo "Processing $Sample $sample for Pychopper" 
+  echo "Processing ${name} for pychopper" 
+  
+  if [ -f $2/${name}_combined.fasta ]; then
+  
+    echo "${name} already processed for pychopper"
+  
+  else
 
-  pychopper -r $2/${sample}_pychopperReport.pdf $1 $2/${sample}_combined.fastq 2> $2/${sample}_pychopper.log
-  convertfasta2fastq $2/${sample}_combined.fastq $2/${sample}_combined.fasta
+    pychopper -r $2/${name}_pychopperReport.pdf $1 $2/${sample}_combined.fastq 2> $2/${sample}_pychopper.log
+    convertfasta2fastq $2/${sample}_combined.fastq $2/${sample}_combined.fasta
+  
+  fi
   
 }
 
@@ -184,6 +192,7 @@ run_minimap2(){
   fi
 
 }
+
 
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
