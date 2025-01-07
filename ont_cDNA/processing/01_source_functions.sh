@@ -101,8 +101,8 @@ run_pychopper(){
   
   else
 
-    pychopper -r $2/${name}_pychopperReport.pdf $1 $2/${sample}_combined.fastq 2> $2/${sample}_pychopper.log
-    convertfasta2fastq $2/${sample}_combined.fastq $2/${sample}_combined.fasta
+    pychopper -r $2/${name}_pychopperReport.pdf $1 $2/${sample}_merged_combined.fastq 2> $2/${sample}_pychopper.log
+    convertfasta2fastq $2/${sample}_merged_combined.fastq $2/${sample}_merged_combined.fasta
   
   fi
   
