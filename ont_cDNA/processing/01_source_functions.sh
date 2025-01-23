@@ -133,35 +133,31 @@ post_porechop_run_cutadapt(){
   input_dir=$(dirname $1)
   name=$(basename $1 .fastq)
   
-  if [ -f $2/${name}_combined.fasta ]; then
-    echo $2/${name}_combined.fasta
+  if [ -f $2/${name}_combined.fastq ]; then
+    echo $2/${name}_combined.fastq
     echo "$name already aligned"
   
   else
-    
-    # requires fasta files for downstream
-    echo "Converting $1 to fasta"
-    seqtk seq -a $1 > ${input_dir}/${name}.fasta
-    
-    # subset fasta file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
+
+    # subset fastq file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
     # reads that end with AAAAAAAAAA = plus reads 
     # reads that start with TTTTTTTTTT = minus reads (need to be reverse complemented)
-    echo "Subsetting fasta to polyA and polyT sequences"
-    python ${SUBSETPOLYTAILS} --fa ${input_dir}/${name}.fasta --o_name ${name} --o_dir $2
+    echo "Subsetting fastq to polyA and polyT sequences"
+    python ${SUBSETPOLYTAILS} --fa $1 --o_name ${name} --o_dir $2
     
     # working in output directory
     cd $2
     
     # reverse complement minus reads (reads ending with polyT)
-    seqtk seq -r ${name}_PolyT.fasta > ${name}_PolyT_rev.fasta
+    seqtk seq -r ${name}_PolyT.fastq > ${name}_PolyT_rev.fastq
     
     # use cutadapt package to trim polyA
     echo "Remove polyA sequences using cutadapt"
-    cutadapt -a "A{60}" ${name}_PolyA.fasta -o ${name}_PolyA_cutadapted.fasta &> ${name}_polyA_cutadapt.log
-    cutadapt -a "A{60}" ${name}_PolyT_rev.fasta -o ${name}_PolyT_rev_cuptadapted.fasta &> ${name}_polyT_cutadapt.log
+    cutadapt -a "A{60}" ${name}_PolyA.fastq -o ${name}_PolyA_cutadapted.fastq &> ${name}_polyA_cutadapt.log
+    cutadapt -a "A{60}" ${name}_PolyT_rev.fastq -o ${name}_PolyT_rev_cuptadapted.fastq &> ${name}_polyT_cutadapt.log
     
     # concatenated reverse minus polyT and polyA reads
-    cat ${name}_PolyA_cutadapted.fasta ${name}_PolyT_rev_cuptadapted.fasta > ${name}_combined.fasta
+    cat ${name}_PolyA_cutadapted.fastq ${name}_PolyT_rev_cuptadapted.fastq > ${name}_combined.fastq
     
   fi
 }
@@ -173,7 +169,7 @@ post_porechop_run_cutadapt(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_minimap2(){
 
-  name=$(basename $1 .fasta)
+  name=$(basename $1 .fastq)
 
   if [ -f $2/${name}_sorted.sam ]; then
     echo "${name} already aligned"
@@ -182,8 +178,16 @@ run_minimap2(){
   
     echo "Aligning ${name} using Minimap2"
     
-    minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
-    samtools sort -O SAM $2/${name}.sam > $2/${name}_sorted.sam
+    # remove secondary and supplementary alignments, but keep duplicates (required for phasing)
+    minimap2 -t 46 -ax splice --secondary=no -R "@RG\tID:${name}\tSM:${name}\tLB:lib1\tPL:ONT" ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
+    samtools view -h -F 2308 $2/${name}.sam > $2/${name}_filtered.sam
+
+    # sort sam file 
+    samtools sort -O SAM $2/${name}_filtered.sam > $2/${name}_filtered_sorted.sam  
+
+    # convert to bam file
+    samtools view -S -b $2/${name}_filtered.sam | samtools sort -o $2/${name}_filtered_sorted.bam
+    samtools index $2/${name}_filtered_sorted.bam
   
     htsbox samview -pS $2/${name}_sorted.sam > $2/${name}.paf
     awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
