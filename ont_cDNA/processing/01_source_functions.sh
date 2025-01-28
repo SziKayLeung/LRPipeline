@@ -1,7 +1,17 @@
 source activate lrp 
 
-current_commit_hash=$(git rev-parse HEAD)
-echo "LRPipeline latest git commit hash: $current_commit_hash"
+# Get the absolute directory where 01_source_functions.sh is located
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Check if the script directory is inside a Git repository
+if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Get the latest commit hash from the Git repository
+    current_commit_hash=$(git -C "$script_dir" rev-parse HEAD)
+    echo "LRPipeline latest git commit hash: $current_commit_hash"
+else
+    echo "Not in a Git repository. Skipping git commit hash check."
+    current_commit_hash="unknown"
+fi
 
 # 1) run_merge <raw_directory> <sample_output_name>
 # output: <sample_output_name>.merged.fastq 
