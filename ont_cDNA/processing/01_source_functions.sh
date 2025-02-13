@@ -42,7 +42,7 @@ merge_fastq_across_samples(){
     
   if [ -f ${output_dir}/${gval}_merged.fastq ]; then
     echo ${output_dir}/${gval}_merged.fastq
-    echo "${gval} already merged"
+    echo -e "Merging ${gval}: \e[32mCompleted\e[0m"
   
   else
     echo "Merging ${gval}"
@@ -107,7 +107,7 @@ run_pychopper(){
   
   if [ -f $2/${name}_combined.fasta ]; then
   
-    echo "${name} already processed for pychopper"
+    echo -e "Pychopper: \e[32mCompleted\e[0m"
   
   else
 
@@ -145,7 +145,7 @@ post_porechop_run_cutadapt(){
   
   if [ -f $2/${name}_combined.fastq ]; then
     echo $2/${name}_combined.fastq
-    echo "$name already aligned"
+    echo -e "Re-orientation and Cutadapt: \e[32mCompleted\e[0m"
   
   else
 
@@ -182,7 +182,7 @@ run_minimap2(){
   name=$(basename $1 .fastq)
 
   if [ -f $2/${name}_sorted.sam ]; then
-    echo "${name} already aligned"
+    echo -e "Minimap2: \e[32mCompleted\e[0m"
   
   else
   
@@ -211,10 +211,10 @@ run_minimap2(){
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
    
-  name=$(basename $1 _merged_combined_sorted.sam)
+  name=$(basename $1 _merged_combined_filtered_sorted.sam)
   
   if [ -f $2/${name}/${name}_clean.TE.log ]; then
-    echo "${name} already corrected"
+    echo -e "TranscriptClean: \e[32mCompleted\e[0m"
   
   else
   
@@ -235,7 +235,7 @@ run_pbmm2(){
   
   if [ -f $2/${name}_mapped.bam ]; then
     
-    echo "Already re-aligned ${name}"
+    echo -e "Pbmm2: \e[32mCompleted\e[0m"
   
   else
   
@@ -257,7 +257,7 @@ filter_alignment(){
 
   if [ -f $2/$1.sorted.sam ]; then
   
-    echo "$1 already filtered"
+    echo -e "Filtered: \e[32mCompleted\e[0m"
   
   else
     
@@ -306,26 +306,44 @@ filter_alignment(){
 
 # run_isoseq_collapse <input_aligned_bam> <output_name> <output_dir>
 run_isoseq_collapse(){
-  echo "Collapsing..."
-  echo "Output: $3/$2_collapsed.gff"
-  
+      
   directory=$(dirname $1)
-  cd ${directory}
   
-  isoseq3 collapse $1 $2"_collapsed.gff" \
-    --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
-    --log-level TRACE --log-file $2"_collapsed.log"
+  if [ -f $directory/$2_collapsed.gff ]; then
+    
+    echo -e "Iso-Seq Collapse: \e[32mCompleted\e[0m"
+  
+  else
+  
+    echo "Collapsing..."
+    echo "Output: $3/$2_collapsed.gff"
+    
+    cd ${directory}
+    
+    isoseq3 collapse $1 $2"_collapsed.gff" \
+      --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
+      --log-level TRACE --log-file $2"_collapsed.log"
+  
+  fi
 }
 
 
 # demuliplex_collapsed_isoforms <input_directory_fasta> <input_collapsed_directory> <output_name>
 demuliplex_collapsed_isoforms(){
-  adapt_cupcake_to_ont.py $1 -o $3
-
-  demux_cupcake_collapse.py \
-    $2/$3"_collapsed.read_stat.txt" \
-    ${dir}/5_align/combined_fasta/$3"_sample_id.csv"\
-    --dataset=ont
+  
+  if [ -f ${dir}/5_align/combined_fasta/$3"_sample_id.csv" ]; then
+    
+    echo -e "Extracted abundance: \e[32mCompleted\e[0m"
+  
+  else
+  
+    adapt_cupcake_to_ont.py $1 -o $3
+  
+    demux_cupcake_collapse.py \
+      $2/$3"_collapsed.read_stat.txt" \
+      ${dir}/5_align/combined_fasta/$3"_sample_id.csv"\
+      --dataset=ont
+  fi
   
 }
 
@@ -333,22 +351,30 @@ demuliplex_collapsed_isoforms(){
 # run_sqanti3 <gtf> <output_dir>
 run_sqanti3(){
   
-  name=$(basename $1 .gff)
-
-  cd $2
- 
-  # sqanti qc
-  echo "Processing Sample ${name} for SQANTI3 QC"
-  python $SQANTI3_DIR/sqanti3_qc.py -v
-  echo ${GENOME_GTF}
-  echo ${GENOME_FASTA}
+  if [ -f $2/${name}"_classification.txt" ]; then
   
-  python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
-  --CAGE_peak ${CAGE_PEAK} \
-  --polyA_motif_list ${POLYA} --skipORF \
-  --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+    echo -e "SQANTI: \e[32mCompleted\e[0m"
   
-  echo "Processing Sample ${name} for SQANTI filter"
-  python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
+  else
+  
+    name=$(basename $1 .gff)
+  
+    cd $2
+   
+    # sqanti qc
+    echo "Processing Sample ${name} for SQANTI3 QC"
+    python $SQANTI3_DIR/sqanti3_qc.py -v
+    echo ${GENOME_GTF}
+    echo ${GENOME_FASTA}
+    
+    python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
+    --CAGE_peak ${CAGE_PEAK} \
+    --polyA_motif_list ${POLYA} --skipORF \
+    --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+    
+    echo "Processing Sample ${name} for SQANTI filter"
+    python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
+  
+  fi
  
 }
