@@ -8,8 +8,8 @@
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
 #SBATCH --mem=200G # specify bytes memory to reserve
-#SBATCH --output=3_merged_collapse_sqanti3.o
-#SBATCH --error=3_merged_collapse_sqanti3.e
+#SBATCH --output=3_merged_collapse_sqanti3-%A_%a.o
+#SBATCH --error=3_merged_collapse_sqanti3-%A_%a.e
 
 
 ##-------------------------------------------------------------------------
@@ -19,7 +19,6 @@ date -u
 
 # source config and function
 module load Miniconda2/4.3.21
-source activate nanopore
 
 # load config file provided on command line when submitting job
 if [ -z "$1" ]; then
@@ -39,8 +38,12 @@ replace_filenames_with_csv.py --copy --ext=fa -i=$WKD_ROOT/5_cupcake/5_align -f=
 
 # merge all aligned files
 allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.sorted.bam)) 
-ls ${allfilteredmapped[@]}
-samtools merge -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ${allfilteredmapped[@]}
+if [ -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ]; then
+  echo -e "Merging all files for collapse: \e[32mCompleted\e[0m"
+else 
+  ls ${allfilteredmapped[@]}
+  samtools merge -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ${allfilteredmapped[@]}
+fi
 
 # collapse isoforms
 run_isoseq_collapse ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ${NAME} 
