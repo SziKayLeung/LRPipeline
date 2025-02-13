@@ -56,11 +56,11 @@ else
 fi
 
 # map combined fasta to reference genome
-run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fasta ${WKD_ROOT}/3_minimap
+run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fastq ${WKD_ROOT}/3_minimap
 
 
 # run transcript clean on aligned reads
-run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_sorted.sam ${WKD_ROOT}/4_tclean
+run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_filtered_sorted.sam ${WKD_ROOT}/4_tclean
 
 # re-align reads
 run_pbmm2 ${WKD_ROOT}/4_tclean/${sample}/${sample}_clean.fa ${WKD_ROOT}/5_cupcake/5_align
