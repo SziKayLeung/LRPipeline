@@ -47,7 +47,7 @@ fi
 if [ "${ERCC_WKD_ROOT}" == "NULL" ]; then
   ERCCDirParam="NULL"
 else
-  ERCCDirParam="'${ERCCDir}'"  # Quote the ERCCDir path
+  ERCCDirParam="'${ERCC_WKD_ROOT}'"  # Quote the ERCCDir path
 fi
 
 Rscript -e "rmarkdown::render('${SCRIPT_ROOT}/QC/QC_report.Rmd', output_file='${WKD_ROOT}/QC_report.html', 

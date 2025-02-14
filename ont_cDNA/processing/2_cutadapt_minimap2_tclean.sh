@@ -49,6 +49,10 @@ elif [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ] || [ "${SEQUENCING}" == "target
     # Run post-processing for Porechop or targeted sequencing
     post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
 
+elif [ "${ERCC}" == "TRUE" ]; then
+    # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
+    ln -sfn ${GENOME_WKD_ROOT}/2_cutadapt_merge/* "${WKD_ROOT}/2_cutadapt_merge/"
+    
 else
     # Exit with error if none of the conditions are met
     echo "Error: Invalid configuration for demultiplexing, check wiki for combinations."
@@ -57,7 +61,6 @@ fi
 
 # map combined fasta to reference genome
 run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fastq ${WKD_ROOT}/3_minimap
-
 
 # run transcript clean on aligned reads
 run_transcriptclean ${WKD_ROOT}/3_minimap/${sample}_merged_combined_filtered_sorted.sam ${WKD_ROOT}/4_tclean
