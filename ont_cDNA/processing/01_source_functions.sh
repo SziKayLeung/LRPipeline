@@ -207,6 +207,16 @@ run_minimap2(){
 
 }
 
+run_minimap2stats(){
+
+  name=$(basename $1 .fastq)
+
+  htsbox samview -pS $2/${name}.sam > $2/${name}.paf
+  awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
+  awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
+  
+}
+
 
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
