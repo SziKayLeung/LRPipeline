@@ -32,12 +32,25 @@ export dir=$WKD_ROOT/5_cupcake
 
 ##-------------------------------------------------------------------------
 
-# replace sample barcodes with sample names
-replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID} -d=${dir}/5_align/combined 
-replace_filenames_with_csv.py --copy --ext=fa -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID}  -d=${dir}/5_align/combined_fasta 
+if [ "${MULTIPLEXING}" == TRUE ]; then 
+
+  # replace sample barcodes with sample names
+  replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID} -d=${dir}/5_align/combined 
+  replace_filenames_with_csv.py --copy --ext=filtered.fa -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID}  -d=${dir}/5_align/combined_fasta 
+  
+  allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.sorted.bam)) 
+
+else
+  
+  mkdir -p ${dir}/5_align/combined_fasta
+  filteredfa=($(ls ${WKD_ROOT}/5_cupcake/5_align/*filtered.fa))
+  for i in ${filteredfa[@]}; do echo $i; cp $i ${dir}/5_align/combined_fasta/ ; done
+  allfilteredmapped=($(ls ${dir}/5_align/*filtered.sorted.bam))
+  printf "%s\n" "${allfilteredmapped[@]}"
+
+fi 
 
 # merge all aligned files
-allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.sorted.bam)) 
 if [ -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ]; then
   echo -e "Merging all files for collapse: \e[32mCompleted\e[0m"
 else 

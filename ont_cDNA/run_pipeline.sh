@@ -23,27 +23,54 @@ config=$(realpath "$1")
 echo "Loading config file for project: ${config}" 
 source ${config}
 
-if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
-  if [ "${SEQUENCING}" == "targeted" ]; then
+if [ "${MULTIPLEXING}" == TRUE ]; then 
+
+  if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
+  
+    if [ "${SEQUENCING}" == "targeted" ]; then
+      
+      ls ${raw_merged_fastq_files}/*fastq* > ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt
+      split -n l/20 -d --additional-suffix=.txt ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt ${WKD_ROOT}/1_demultiplex/split/splitfastq_
+      echo "Performed targeted sequencing or use of custom barcodes: using Porechop for demultiplexing primers and barcodes"
+      jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh ${config} | awk '{print $NF}')
     
-    ls ${raw_merged_fastq_files}/*fastq* > ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt
-    split -n l/20 -d --additional-suffix=.txt ${WKD_ROOT}/1_demultiplex/split/all_fastq.txt ${WKD_ROOT}/1_demultiplex/split/splitfastq_
-    echo "Performed targeted sequencing or use of custom barcodes: using Porechop for demultiplexing primers and barcodes"
-    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_porechop.sh ${config} | awk '{print $NF}')
+    else
+      echo "Performed whole transcriptome sequencing or use of standard barcodes: using Pychopper for demultiplexing primers and barcodes"
+      jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh)
+    
+    fi
+  
   else
-    echo "Performed whole transcriptome sequencing or use of standard barcodes: using Pychopper for demultiplexing primers and barcodes"
-    jobid1=$(sbatch ${SCRIPT_ROOT}/processing/1_demux_pychopper.sh)
+  
+    # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
+    ln -sf ${DEMULTIPLEX_DIR}/* "${WKD_ROOT}/1_demultiplex"
+    echo "Demultiplexing already performed"
+  
   fi
+
 else
-  # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
-  ln -sf ${DEMULTIPLEX_DIR}/* "${WKD_ROOT}/1_demultiplex"
-  echo "Demultiplexing already performed"
+  
+  sample=${ALL_SAMPLES_NAMES[0]}
+  mkdir -p ${WKD_ROOT}/1_basecalled/original
+  cp ${RAW_ROOT_DIR}/${sample}.fastq ${WKD_ROOT}/1_basecalled/original
+  mv ${WKD_ROOT}/1_basecalled/original/${sample}.fastq ${WKD_ROOT}/1_basecalled/original/${sample}_merged.fastq
+  cd ${WKD_ROOT}/1_basecalled
+  seqtk split ${WKD_ROOT}/1_basecalled/original/${sample}_merged.fastq -n 20
+
+  split -l $(( $(wc -l < ${WKD_ROOT}/1_basecalled/original/multiome_pilot_merged.fastq) / 20 / 4 * 4 )) \
+    -d --additional-suffix=_merged.fastq ${WKD_ROOT}/1_basecalled/original/multiome_pilot_merged.fastq ${sample}_
+
+ 
+fi  
+
+if [ "${MULTIPLEXING}" == TRUE ]; then 
+  jobid1=$(sbatch --array=0-$((numSamples - 1)) ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
+else
+  jobid1=$(sbatch ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
 fi
 
-jobid2=$(sbatch --array=0-$((numSamples - 1)) --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
-
 # isoseq-collapse, sqanti3
-sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/3_merged_collapse_sqanti3.sh
+sbatch --dependency=afterok:$jobid1 ${SCRIPT_ROOT}/processing/3_merged_collapse_sqanti3.sh
 
 # QC
-sbatch --dependency=afterok:$jobid2 ${SCRIPT_ROOT}/processing/4_QC.sh ${config}
+#sbatch --dependency=afterok:$jobid3 ${SCRIPT_ROOT}/processing/4_QC.sh ${config}

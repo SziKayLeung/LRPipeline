@@ -31,8 +31,19 @@ echo "Loading config file for project: ${config}"
 source ${config}
 source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
-sample=${ALL_SAMPLES_NAMES[${SLURM_ARRAY_TASK_ID}]}
-echo ${sample}
+if [ "${MULTIPLEXING}" == TRUE ]; then 
+   
+   sample=${ALL_SAMPLES_NAMES[${SLURM_ARRAY_TASK_ID}]}
+   echo ${sample}
+
+else
+
+   parts=(00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20)
+   part=${parts[${SLURM_ARRAY_TASK_ID}]}
+   sample=${ALL_SAMPLES_NAMES[0]}_${part}
+   
+fi 
+
 
 ##-------------------------------------------------------------------------
 
@@ -41,24 +52,35 @@ if [ "${MERGE_FASTQ}" == TRUE ]; then
     merge_fastq_across_samples ${sample} ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
 fi
 
-if [ "${DEMULTIPLEX}" == "FALSE" ] && [ "${DEMULTIPLEX_SOFTWARE}" == "Pychopper" ]; then
-    # Run pychopper if DEMULTIPLEX is FALSE and software is Pychopper
-    run_pychopper ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+if [ "${MULTIPLEXING}" == TRUE ]; then 
+  
+  if [ "${DEMULTIPLEX}" == "FALSE" ] && [ "${DEMULTIPLEX_SOFTWARE}" == "Pychopper" ]; then
+      # Run pychopper if DEMULTIPLEX is FALSE and software is Pychopper
+      run_pychopper ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+  
+  elif [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ] || [ "${SEQUENCING}" == "targeted" ]; then
+      # Run post-processing for Porechop or targeted sequencing
+      post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+  
+  elif [ "${ERCC}" == "TRUE" ]; then
+      # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
+      ln -sfn ${GENOME_WKD_ROOT}/2_cutadapt_merge/* "${WKD_ROOT}/2_cutadapt_merge/"
+      
+  else
+      # Exit with error if none of the conditions are met
+      echo "Error: Invalid configuration for demultiplexing, check wiki for combinations."
+      exit 1
+  fi
 
-elif [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ] || [ "${SEQUENCING}" == "targeted" ]; then
-    # Run post-processing for Porechop or targeted sequencing
-    post_porechop_run_cutadapt ${WKD_ROOT}/1b_demultiplex_merged/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
-
-elif [ "${ERCC}" == "TRUE" ]; then
-    # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
-    ln -sfn ${GENOME_WKD_ROOT}/2_cutadapt_merge/* "${WKD_ROOT}/2_cutadapt_merge/"
-    
-else
-    # Exit with error if none of the conditions are met
-    echo "Error: Invalid configuration for demultiplexing, check wiki for combinations."
-    exit 1
+else 
+  
+  run_pychopper ${WKD_ROOT}/1_basecalled/${sample}_merged.fastq ${WKD_ROOT}/2_cutadapt_merge
+  
+  # create stats output for QC downstream
+  PrefixOriginal=${ALL_SAMPLES_NAMES[0]}
+  seqkit stats -a ${WKD_ROOT}/1_basecalled/original/${PrefixOriginal}_merged.fastq > ${WKD_ROOT}/1b_demultiplex_merged/${NAME}_readstats.txt
 fi
-
+  
 # map combined fasta to reference genome
 run_minimap2 ${WKD_ROOT}/2_cutadapt_merge/${sample}_merged_combined.fastq ${WKD_ROOT}/3_minimap
 

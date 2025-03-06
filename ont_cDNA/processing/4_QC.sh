@@ -37,6 +37,19 @@ source activate lrp
 #ERCC_WKD_ROOT="/lustre/projects/Research_Project-MRC190311/longReadSeq/ONTRNA/sorted_nuclei/RNA/human/combined/v2"
 #studyName="Humansortednucleidataset"
 
+if [ $MULTIPLEXING == FALSE ]; then
+  mkdir -p $WKD_ROOT/3_minimap/partStats
+  mv $WKD_ROOT/3_minimap/*mappedstats* $WKD_ROOT/3_minimap/partStats/
+  stats=$(ls $WKD_ROOT/3_minimap/partStats/*mappedstats*)
+  cat ${stats[@]} > $WKD_ROOT/3_minimap/${NAME}_merged_combined_mappedstats.txt
+  
+  mkdir -p $WKD_ROOT/5_cupcake/5_align/partStats
+  mv $WKD_ROOT/5_cupcake/5_align/PAF/*mappedstats* $WKD_ROOT/5_cupcake/5_align/partStats/
+  stats=$(ls $WKD_ROOT/5_cupcake/5_align/partStats/*mappedstats*)
+  cat ${stats[@]} > $WKD_ROOT/5_cupcake/5_align/PAF/${NAME}_merged_combined_mappedstats.txt
+  
+fi
+
 if [ -f ${WKD_ROOT}/QC_input.RData ]; then 
 	echo "Input for QC ready"
 else 
