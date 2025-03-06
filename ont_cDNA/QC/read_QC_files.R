@@ -56,6 +56,11 @@ rootDir <- opt$rootdir
 
 ## ---------- functions -----------------
 
+# check if studyName exists in manifest file 
+if(isFALSE(any(colnames(manifest) == "studyName"))){
+  stop("Exiting script due to manifest does not contain a studyName column.")
+}
+
 # check if correctly labelled according to manifest 
 check_sample <- function(Files){
   ID <- word(basename(Files),c(1), sep = fixed("_"))
@@ -82,7 +87,7 @@ manifest$individual <- as.character(manifest$individual)
 
 ## ---------- demultiplex stats -----------------
 
-message("Reading in demultipled read stats")
+message("Reading in demultiplexd read stats")
 demuxFiles <- list.files(path = paste0(rootDir, "/1b_demultiplex_merged/"), pattern = "readstats", full = T, recursive = F)
 print(demuxFiles)
 check_sample(demuxFiles)
@@ -179,7 +184,7 @@ class_file <- class_file %>% filter(!isoform %in% monoexonic)
 
 ## ---------- demux expression file -----------------
 
-demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_collapse"), pattern = "count.csv", full = T)
+demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_collapse"), pattern = "demux_fl_count.csv", full = T)
 message("Reading demux expression file: ", demux)
 demux <- fread(demux, data.table = F)
 check_id(demux)

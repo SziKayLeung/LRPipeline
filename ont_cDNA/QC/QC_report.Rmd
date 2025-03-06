@@ -87,6 +87,12 @@ if(unique(input$manifest$species) == "mouse"){
   geneType <- read.csv(paste0(LOGenDir,"0_utils/references/gencode.v40.annotation.geneannotation_corrected.csv"), header = T)
 }
 
+numSample=length(unique(input$manifest$sample))
+if(numSample == 1){
+  multiplex = FALSE
+}else{
+  multiplex = TRUE
+}
 ```
 
 ```{r load_ERCC, include=FALSE}
@@ -405,13 +411,14 @@ colnames(stage6Stats) <- "monoFilteredReads"
 count_non_zero <- function(row) {
   return(sum(row != 0))
 }
+demuxFiltered <- input$demuxFiltered
 nreads <- apply(input$demuxFiltered,1,sum)
 nsample <- apply(input$demuxFiltered, 1, count_non_zero)
-input$demuxFiltered$nreads <- nreads
-input$demuxFiltered$nsample <- nsample
-input$demuxFiltered <- input$demuxFiltered %>% filter(nreads >= 2, nsample >= 2)
+demuxFiltered$nreads <- nreads
+demuxFiltered$nsample <- nsample
+demuxFiltered <- demuxFiltered %>% filter(nreads >= 2, nsample >= 2)
 
-stage7Stats <- as.data.frame(input$demuxFiltered %>% select(-nreads, -nsample) %>% apply(.,2,sum)) 
+stage7Stats <- as.data.frame(demuxFiltered %>% select(-nreads, -nsample) %>% apply(.,2,sum)) 
 colnames(stage7Stats) <- "expressionFilteredReads"
 stage4Stats <- merge(input$manifest[,c("ID","sample")], stage4Stats, by.x = "ID", by.y = 0)
 stage5Stats <- merge(input$manifest[,c("ID","sample")], stage5Stats, by.x = "ID", by.y = 0)
@@ -534,24 +541,6 @@ ggplot(SQANTIFilteredReasonDf, aes(y = reasons, x = perc, fill = structural_cate
   theme_classic()
 
 ```
-
-Below is a plot of the final dataset of short transcripts after applying a length threshold and filtering criteria.
-
-This plot shows that if there was a size selection of 200bp or 700bp performing during library preparation at which these short transcripts were discarded, we would be losing potentially real FSM mono-exonic protein-coding transcripts and lncRNA, and novel multi-exonic genes. However these reads typically constitute less than 1% of the dataset, even though the "discarded" short transcripts as a whole constitute a significant proportion of all transcripts.  
-
-```{r shortIsoformsFinal, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Type of short transcripts kept after multiple filtering criteria"}
-
-Final_kept_df <- lapply(list(df[[1]],df[[length(df)]]), function(x) final_kept_shortDataset(x))
-names(Final_kept_df) <- c(names(df)[1],names(df)[length(df)])
-
-Final_kept_df <- rbindlist(Final_kept_df, idcol = "lengthCutOff")
-
-ggplot(Final_kept_df, aes (y = Class, x = n, fill = structural_category)) + geom_bar(stat = "identity") +
-  facet_grid(monoExonic ~ lengthCutOff, scales = "free", space = "free") + 
-  theme_classic() +
-  labs(x = "Number of transcripts", y = "RNA class") 
-```
-
 
 ## Expression threshold
 
@@ -708,13 +697,19 @@ plot_grid(plotlist = OligoGenePlots)
 
 # QC: Saturation 
 
-Below are rarefaction curves of the coverage of RNA isoform diversity by SQANTI's structural category with added samples. We anticipate a plateau of the number of "new" transcripts added with each sequential sample. 
+`r if (multiplex) {
+  "
+  
+  Below are rarefaction curves of the coverage of RNA isoform diversity by SQANTI's structural category with added samples. We anticipate a plateau of the number of new transcripts added with each sequential sample. 
+  Note:  The more abundant transcripts are always detected first, so FSM transcripts will also be the first to be detected compared to novel transcripts. 
+  "
+} else {
+  "Saturation curve not available for one sample."
+}`
 
-::: note
-The more abundant transcripts are always detected first, so FSM transcripts will also be the first to be detected compared to novel transcripts. 
-:::
 
-```{r saturation_plot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Cumulative number of transcripts with added sample"}
+
+```{r saturation_plot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Cumulative number of transcripts with added sample", eval = multiplex}
 class_file <- merge(input$class_file, input$demuxFiltered, by.x = "isoform", by.y = 0)
 plot_cumulative_added_sample(class_file, input$demuxFiltered)
 ```
@@ -726,7 +721,9 @@ plot_cumulative_added_sample(class_file, input$demuxFiltered)
 Below is a basic summary of the number of transcripts and genes found in the transcriptome of all the samples.
 
 ```{r summary} 
+class_file <- merge(input$class_file, input$demuxFiltered, by.x = "isoform", by.y = 0)
 class_file_annoGenes <- class_file[!grepl("novel", class_file$associated_gene),]
+
 summary <- descriptives_summary(class_file, class_file_annoGenes)
 knitr::kable(summary, 
              col.names = c(''),
