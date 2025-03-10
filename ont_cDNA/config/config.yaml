@@ -19,9 +19,6 @@ export META_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/0_met
 
 ## SKLeung scripts
 export LOGEN_ROOT=//lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
-export PATH=$PATH:${LOGEN_ROOT}/miscellaneous
-export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
-SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
 
 
 ## ---------------------------
