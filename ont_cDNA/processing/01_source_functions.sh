@@ -20,6 +20,8 @@ else
     current_commit_hash="unknown"
 fi
 
+module load picard  # java not working under lrp conda environment
+
 # 1) run_merge <raw_directory> <sample_output_name>
 # output: <sample_output_name>.merged.fastq 
 run_merge(){
@@ -308,7 +310,7 @@ filter_alignment(){
     ## filter based on alignable length (>0.85) and identity (>0.95)
     awk -F'\t' '{if ($6>=0.85 && $8>=0.95) {print $1}}' $1"_mappedstats.txt" > $1_filteredreads.txt
   
-    picard FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
+    java -jar $EBROOTPICARD/picard.jar FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
     samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
     samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
     
