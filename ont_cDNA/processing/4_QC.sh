@@ -2,7 +2,7 @@
 #SBATCH --export=ALL # export all environment variables to the batch job
 #SBATCH -D . # set working directory to .
 #SBATCH -p mrcq # submit to the parallel queue
-#SBATCH --time=1:00:00 # maximum walltime for the job
+#SBATCH --time=7:00:00 # maximum walltime for the job
 #SBATCH -A Research_Project-MRC148213 # research project to submit under
 #SBATCH --nodes=1 # specify number of nodes
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
@@ -37,10 +37,30 @@ source activate lrp
 #ERCC_WKD_ROOT="/lustre/projects/Research_Project-MRC190311/longReadSeq/ONTRNA/sorted_nuclei/RNA/human/combined/v2"
 #studyName="Humansortednucleidataset"
 
+if [ $MULTIPLEXING == FALSE ]; then
+  mkdir -p $WKD_ROOT/3_minimap/partStats
+  mv $WKD_ROOT/3_minimap/*mappedstats* $WKD_ROOT/3_minimap/partStats/
+  stats=$(ls $WKD_ROOT/3_minimap/partStats/*mappedstats*)
+  cat ${stats[@]} > $WKD_ROOT/3_minimap/${NAME}_merged_combined_mappedstats.txt
+  
+  mkdir -p $WKD_ROOT/5_cupcake/5_align/partStats
+  mv $WKD_ROOT/5_cupcake/5_align/PAF/*mappedstats* $WKD_ROOT/5_cupcake/5_align/partStats/
+  stats=$(ls $WKD_ROOT/5_cupcake/5_align/partStats/*mappedstats*)
+  cat ${stats[@]} > $WKD_ROOT/5_cupcake/5_align/PAF/${NAME}_merged_combined_mappedstats.txt
+  
+fi
+
+if [ -f ${WKD_ROOT}/QC_input.RData ]; then 
+	echo "Input for QC ready"
+else 
+	echo "Prepare input for QC"
+	Rscript ${SCRIPT_ROOT}/QC/read_QC_files.R -m ${manifest} -r ${WKD_ROOT}
+fi 
+
 if [ "${ERCC_WKD_ROOT}" == "NULL" ]; then
   ERCCDirParam="NULL"
 else
-  ERCCDirParam="'${ERCCDir}'"  # Quote the ERCCDir path
+  ERCCDirParam="'${ERCC_WKD_ROOT}'"  # Quote the ERCCDir path
 fi
 
 Rscript -e "rmarkdown::render('${SCRIPT_ROOT}/QC/QC_report.Rmd', output_file='${WKD_ROOT}/QC_report.html', 
@@ -48,6 +68,5 @@ Rscript -e "rmarkdown::render('${SCRIPT_ROOT}/QC/QC_report.Rmd', output_file='${
     rootDir = '${WKD_ROOT}', 
     LRPipelineDir = '${SCRIPT_ROOT}', 
     LOGenDir = '${LOGEN_ROOT}', 
-    manifest = '${manifest}', 
     ERCCDir = ${ERCCDirParam}
   ))"

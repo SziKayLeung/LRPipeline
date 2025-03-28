@@ -1,7 +1,26 @@
 source activate lrp 
+export PATH=$PATH:${LOGEN_ROOT}/transcriptome_stats
+export PATH=$PATH:${LOGEN_ROOT}/compare_datasets
+export PATH=$PATH:${LOGEN_ROOT}/target_gene_annotation
+export PATH=$PATH:${LOGEN_ROOT}/merge_characterise_dataset
+export PATH=$PATH:${LOGEN_ROOT}/miscellaneous 
+export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
+SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
 
-current_commit_hash=$(git rev-parse HEAD)
-echo "LRPipeline latest git commit hash: $current_commit_hash"
+# Get the absolute directory where 01_source_functions.sh is located
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Check if the script directory is inside a Git repository
+if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Get the latest commit hash from the Git repository
+    current_commit_hash=$(git -C "$script_dir" rev-parse HEAD)
+    echo "LRPipeline latest git commit hash: $current_commit_hash"
+else
+    echo "Not in a Git repository. Skipping git commit hash check."
+    current_commit_hash="unknown"
+fi
+
+module load picard  # java not working under lrp conda environment
 
 # 1) run_merge <raw_directory> <sample_output_name>
 # output: <sample_output_name>.merged.fastq 
@@ -32,7 +51,7 @@ merge_fastq_across_samples(){
     
   if [ -f ${output_dir}/${gval}_merged.fastq ]; then
     echo ${output_dir}/${gval}_merged.fastq
-    echo "${gval} already merged"
+    echo -e "Merging ${gval}: \e[32mCompleted\e[0m"
   
   else
     echo "Merging ${gval}"
@@ -97,7 +116,7 @@ run_pychopper(){
   
   if [ -f $2/${name}_combined.fasta ]; then
   
-    echo "${name} already processed for pychopper"
+    echo -e "Pychopper: \e[32mCompleted\e[0m"
   
   else
 
@@ -133,35 +152,31 @@ post_porechop_run_cutadapt(){
   input_dir=$(dirname $1)
   name=$(basename $1 .fastq)
   
-  if [ -f $2/${name}_combined.fasta ]; then
-    echo $2/${name}_combined.fasta
-    echo "$name already aligned"
+  if [ -f $2/${name}_combined.fastq ]; then
+    echo $2/${name}_combined.fastq
+    echo -e "Re-orientation and Cutadapt: \e[32mCompleted\e[0m"
   
   else
-    
-    # requires fasta files for downstream
-    echo "Converting $1 to fasta"
-    seqtk seq -a $1 > ${input_dir}/${name}.fasta
-    
-    # subset fasta file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
+
+    # subset fastq file to polyA and polyT fasta (i.e. reads ending with PolyA and starting with polyT)
     # reads that end with AAAAAAAAAA = plus reads 
     # reads that start with TTTTTTTTTT = minus reads (need to be reverse complemented)
-    echo "Subsetting fasta to polyA and polyT sequences"
-    python ${SUBSETPOLYTAILS} --fa ${input_dir}/${name}.fasta --o_name ${name} --o_dir $2
+    echo "Subsetting fastq to polyA and polyT sequences"
+    python ${SUBSETPOLYTAILS} --fa $1 --o_name ${name} --o_dir $2
     
     # working in output directory
     cd $2
     
     # reverse complement minus reads (reads ending with polyT)
-    seqtk seq -r ${name}_PolyT.fasta > ${name}_PolyT_rev.fasta
+    seqtk seq -r ${name}_PolyT.fastq > ${name}_PolyT_rev.fastq
     
     # use cutadapt package to trim polyA
     echo "Remove polyA sequences using cutadapt"
-    cutadapt -a "A{60}" ${name}_PolyA.fasta -o ${name}_PolyA_cutadapted.fasta &> ${name}_polyA_cutadapt.log
-    cutadapt -a "A{60}" ${name}_PolyT_rev.fasta -o ${name}_PolyT_rev_cuptadapted.fasta &> ${name}_polyT_cutadapt.log
+    cutadapt -a "A{60}" ${name}_PolyA.fastq -o ${name}_PolyA_cutadapted.fastq &> ${name}_polyA_cutadapt.log
+    cutadapt -a "A{60}" ${name}_PolyT_rev.fastq -o ${name}_PolyT_rev_cuptadapted.fastq &> ${name}_polyT_cutadapt.log
     
     # concatenated reverse minus polyT and polyA reads
-    cat ${name}_PolyA_cutadapted.fasta ${name}_PolyT_rev_cuptadapted.fasta > ${name}_combined.fasta
+    cat ${name}_PolyA_cutadapted.fastq ${name}_PolyT_rev_cuptadapted.fastq > ${name}_combined.fastq
     
   fi
 }
@@ -173,19 +188,27 @@ post_porechop_run_cutadapt(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_minimap2(){
 
-  name=$(basename $1 .fasta)
+  name=$(basename $1 .fastq)
 
   if [ -f $2/${name}_sorted.sam ]; then
-    echo "${name} already aligned"
+    echo -e "Minimap2: \e[32mCompleted\e[0m"
   
   else
   
     echo "Aligning ${name} using Minimap2"
     
-    minimap2 -t 46 -ax splice ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
-    samtools sort -O SAM $2/${name}.sam > $2/${name}_sorted.sam
+    # remove secondary and supplementary alignments, but keep duplicates (required for phasing)
+    minimap2 -t 46 -ax splice --secondary=no -R "@RG\tID:${name}\tSM:${name}\tLB:lib1\tPL:ONT" ${GENOME_FASTA} $1 > $2/${name}.sam 2> $2/${name}_minimap2.log
+    samtools view -h -F 2308 $2/${name}.sam > $2/${name}_filtered.sam
+
+    # sort sam file 
+    samtools sort -O SAM $2/${name}_filtered.sam > $2/${name}_filtered_sorted.sam  
+
+    # convert to bam file
+    samtools view -S -b $2/${name}_filtered.sam | samtools sort -o $2/${name}_filtered_sorted.bam
+    samtools index $2/${name}_filtered_sorted.bam
   
-    htsbox samview -pS $2/${name}_sorted.sam > $2/${name}.paf
+    htsbox samview -pS $2/${name}.sam > $2/${name}.paf
     awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
     awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
   
@@ -193,14 +216,24 @@ run_minimap2(){
 
 }
 
+run_minimap2stats(){
+
+  name=$(basename $1 .fastq)
+
+  htsbox samview -pS $2/${name}.sam > $2/${name}.paf
+  awk -F'\t' '{if ($6!="*") {print $0}}' $2/${name}.paf > $2/${name}.filtered.paf
+  awk -F'\t' '{print $1,$6,$8+1,$2,$4-$3,($4-$3)/$2,$10,($10)/($4-$3),$5,$13,$15,$17}' $2/${name}.filtered.paf | sed -e s/"mm:i:"/""/g -e s/"in:i:"/""/g -e s/"dn:i:"/""/g | sed s/" "/"\t"/g > $2/${name}"_mappedstats.txt"
+  
+}
+
 
 # run_transcriptclean <input_sam> <output_dir>
 run_transcriptclean(){
    
-  name=$(basename $1 _merged_combined_sorted.sam)
+  name=$(basename $1 _merged_combined_filtered_sorted.sam)
   
   if [ -f $2/${name}/${name}_clean.TE.log ]; then
-    echo "${name} already corrected"
+    echo -e "TranscriptClean: \e[32mCompleted\e[0m"
   
   else
   
@@ -221,7 +254,7 @@ run_pbmm2(){
   
   if [ -f $2/${name}_mapped.bam ]; then
     
-    echo "Already re-aligned ${name}"
+    echo -e "Pbmm2: \e[32mCompleted\e[0m"
   
   else
   
@@ -243,7 +276,7 @@ filter_alignment(){
 
   if [ -f $2/$1.sorted.sam ]; then
   
-    echo "$1 already filtered"
+    echo -e "Filtered: \e[32mCompleted\e[0m"
   
   else
     
@@ -277,7 +310,7 @@ filter_alignment(){
     ## filter based on alignable length (>0.85) and identity (>0.95)
     awk -F'\t' '{if ($6>=0.85 && $8>=0.95) {print $1}}' $1"_mappedstats.txt" > $1_filteredreads.txt
   
-    picard FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
+    java -jar $EBROOTPICARD/picard.jar FilterSamReads I=$2/$1.bam O=$2/$1.filtered.bam READ_LIST_FILE=$2/PAF/$1_filteredreads.txt FILTER=includeReadList &> $2/PAF/$1.picard.log
     samtools bam2fq $2/$1.filtered.bam| seqtk seq -A > $2/$1.filtered.fa
     samtools sort -O bam -o "$2/$1.filtered.sorted.bam" "$2/$1.filtered.bam"
     
@@ -292,26 +325,44 @@ filter_alignment(){
 
 # run_isoseq_collapse <input_aligned_bam> <output_name> <output_dir>
 run_isoseq_collapse(){
-  echo "Collapsing..."
-  echo "Output: $3/$2_collapsed.gff"
-  
+      
   directory=$(dirname $1)
-  cd ${directory}
   
-  isoseq3 collapse $1 $2"_collapsed.gff" \
-    --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
-    --log-level TRACE --log-file $2"_collapsed.log"
+  if [ -f $directory/$2_collapsed.gff ]; then
+    
+    echo -e "Iso-Seq Collapse: \e[32mCompleted\e[0m"
+  
+  else
+  
+    echo "Collapsing..."
+    echo "Output: $3/$2_collapsed.gff"
+    
+    cd ${directory}
+    
+    isoseq3 collapse $1 $2"_collapsed.gff" \
+      --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
+      --log-level TRACE --log-file $2"_collapsed.log"
+  
+  fi
 }
 
 
 # demuliplex_collapsed_isoforms <input_directory_fasta> <input_collapsed_directory> <output_name>
 demuliplex_collapsed_isoforms(){
-  adapt_cupcake_to_ont.py $1 -o $3
-
-  demux_cupcake_collapse.py \
-    $2/$3"_collapsed.read_stat.txt" \
-    ${dir}/5_align/combined_fasta/$3"_sample_id.csv"\
-    --dataset=ont
+  
+  if [ -f ${dir}/5_align/combined_fasta/$3"_sample_id.csv" ]; then
+    
+    echo -e "Extracted abundance: \e[32mCompleted\e[0m"
+  
+  else
+  
+    adapt_cupcake_to_ont.py $1 -o $3
+  
+    demux_cupcake_collapse.py \
+      $2/$3"_collapsed.read_stat.txt" \
+      ${dir}/5_align/combined_fasta/$3"_sample_id.csv"\
+      --dataset=ont
+  fi
   
 }
 
@@ -319,22 +370,173 @@ demuliplex_collapsed_isoforms(){
 # run_sqanti3 <gtf> <output_dir>
 run_sqanti3(){
   
-  name=$(basename $1 .gff)
+  if [ -f $2/${name}"_classification.txt" ]; then
+  
+    echo -e "SQANTI: \e[32mCompleted\e[0m"
+  
+  else
+  
+    name=$(basename $1 .gff)
+  
+    cd $2
+   
+    # sqanti qc
+    echo "Processing Sample ${name} for SQANTI3 QC"
+    python $SQANTI3_DIR/sqanti3_qc.py -v
+    echo ${GENOME_GTF}
+    echo ${GENOME_FASTA}
+    
+    python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
+    --CAGE_peak ${CAGE_PEAK} \
+    --polyA_motif_list ${POLYA} --skipORF \
+    --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+    
+    echo "Processing Sample ${name} for SQANTI filter"
+    python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
+  
+  fi
+ 
+}
 
-  cd $2
- 
-  # sqanti qc
-  echo "Processing Sample ${name} for SQANTI3 QC"
-  python $SQANTI3_DIR/sqanti3_qc.py -v
-  echo ${GENOME_GTF}
-  echo ${GENOME_FASTA}
+#### -------------------- post SQANTI -------------------
+
+## ---------- run_cpat -----------------
+
+# run_cpat <input_fasta> <output_name> <output_dir>
+# Aim: 
+  # call ORF from fasta file using CPAT (determine whether isoforms are protein-coding or non-protein-coding)
+# Input:
+  # input_fasta = input fasta for ORF to be called from
+  # output_name = prefix output name
+  # output_dir = path of output root directory to create CPAT folder directory
+# Pre-requisite:
+  # ${HEXAMER} = CPAT hexamer file (called from config file)
+  # ${LOGITMODEL} = CPAT logit model (called from config file)
+# Output
+  # CPAT output files
+  # CPAT log file
+
+run_cpat(){
   
-  python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
-  --CAGE_peak ${CAGE_PEAK} \
-  --polyA_motif_list ${POLYA} --skipORF \
-  --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+  mkdir -p $3/CPAT; cd $3/CPAT
   
-  echo "Processing Sample ${name} for SQANTI filter"
-  python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
- 
+  cpat.py --version
+  cpat.py -x ${HEXAMER} -d ${LOGITMODEL} -g $1 --min-orf=50 --top-orf=50 -o $2 2> $2"_cpat.e"
+
+  
+}
+
+
+
+## ---------- extract_best_orf -----------------
+
+# extract_best_orf <output_name> <input/output_dir>
+# Aim: 
+  # extract the best ORF from CPAT for further analysis of ORF predictions for predicted NMD
+# Input:
+  # output_name = input and output name used from CPAT analysis
+  # input/output_dir = directory of CPAT files
+# Pre-requisite:
+  # run_cpat to generate CPAT output files
+# Output:
+  # 
+
+extract_best_orf(){
+  
+  cd $2/CPAT
+  extract_fasta_bestorf.py --fa $1".ORF_seqs.fa" --orf $1".ORF_prob.best.tsv" --o_name $1"_bestORF" --o_dir $2 &> orfextract.log
+
+}
+
+
+## ---------- convert_gtf_bed12 -----------------
+
+# convert_gtf_bed12 <input_gtf> 
+# Aim:
+  # convert gtf to bed12 file for downstream 
+# Input: 
+  # input_gtf = input gtf to be converted 
+# Output:
+  # path/to/original/directory/<sample>_sorted.bed12
+convert_gtf_bed12(){
+  
+  # variables 
+  output_dir="$(dirname $1)" 
+  sample=${1%.gtf} # removes .gtf
+  
+  cd ${output_dir}
+  
+  gtfToGenePred $1 $sample.genePred
+  genePredToBed $sample.genePred > $sample.bed12
+  sort -k1,1 -k2,2n $sample.bed12 > $sample"_sorted.bed12"
+  rm $sample.genePred $sample.bed12
+
+}
+
+## ---------- colour_by_abundance -----------------
+
+# colour_by_abundance <cpat_name> <input_gtf> <input_abundance> <output_dir> <species=mouse/human>
+# Aim:
+  # generate multiple abundance file using input CPAT and expression using custom script 
+  # custom script: ${LOGEN_ROOT}/merge_characterise_dataset/colour_transcripts_by_countandpotential.py
+# Input:
+  # cpat_name = CPAT input prefix names 
+  # input_gtf = input gtf for conversion to bed12
+  # input_abundance = path of input abundance file
+  # output_dir = root of output directory for characterisation
+  # species = mouse/human for determining CPAT threshold in script
+# Output:
+  # bed files
+  
+colour_by_abundance(){
+  
+  mkdir -p $4/bed12Files
+  
+  # convert gtf to bed12
+  convert_gtf_bed12 $2
+  
+  # variables
+  bed12=${2%.gtf}_sorted.bed12
+  sample="$(basename $2)" 
+  outputname=${sample%.gtf}
+  echo $outputname
+  
+  colour_transcripts_by_countandpotential.py \
+    --bed $bed12 \
+    --cpat $4/CPAT/$1".ORF_prob.best.tsv" \
+    --noORF $4/CPAT/$1".no_ORF.txt" \
+    --a $3 \
+    --o $outputname \
+    --dir $4/bed12Files/ \
+    --species $5
+  
+}
+
+
+# subset_gene_reference <root_dir>
+subset_gene_reference(){
+  
+  mkdir -p $1/TargetGenesRef
+  
+  source activate sqanti2_py3
+  subset_reference_by_gene.py --r=${GENOME_GTF} --glist ${TGENES[@]} --o $1/TargetGenesRef
+  
+}
+
+
+# run_transdecoder <name> <root_dir>
+run_transdecoder(){
+  source deactivate
+  
+  mkdir -p $2/Transdecoder; cd $2/Transdecoder
+  
+  TransDecoder.LongOrfs -t $2/CPAT/$1"_bestORF.fasta" &> transdecoder_longorf.log
+  
+  source activate sqanti2_py3
+  hmmscan --cpu 8 --domtblout pfam.domtblout $PFAM_REF $1"_bestORF.fasta.transdecoder_dir"/longest_orfs.pep &> hmmscan.log
+  
+  source activate nanopore
+  TransDecoder.Predict -t $2/CPAT/$1"_bestORF.fasta" --retain_pfam_hits pfam.domtblout --no_refine_starts &> transdecoder_predict.log
+  sed '/^#/ d' < pfam.domtblout > pfam.domtblout.read
+  
 }

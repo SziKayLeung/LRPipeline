@@ -12,9 +12,7 @@ params:
   rootDir: NULL
   LRPipelineDir: NULL
   LOGenDir: NULL
-  manifest: NULL
   ERCCDir: NULL
-  studyName: NULL
 ---
 
 ```{r global_options, include=FALSE}
@@ -55,12 +53,12 @@ rootDir <- paste0(params$rootDir,"/")
 LRPipelineDir <- paste0(params$LRPipelineDir,"/")
 LOGenDir <- paste0(params$LOGenDir,"/")
 ERCCDir <- params$ERCCDir
-manifest <- read.csv(params$manifest)
 
 ## ---------------- LOGEN scripts
 
 # summary
 source(paste0(LOGenDir, "transcriptome_stats/summarise_classfiles.R"))
+source(paste0(LOGenDir, "transcriptome_stats/short_fragments_summary.R"))
 
 # sensitivity, saturation
 source(paste0(LOGenDir, "aesthetics_basics_plots/pthemes.R"))
@@ -68,8 +66,36 @@ source(paste0(LOGenDir,"longread_QC/power_calculations.R"))
 source(paste0(LOGenDir,"transcriptome_stats/sample_sensitivity.R"))
 source("ERCC_functions.R")
 
+```
+
+```{r load_input, include=FALSE}
+
+load(paste0(rootDir, "/QC_input.RData"))
+
+
+if("bulk"%in% input$manifest$cellType | any(is.na(input$manifest$cellType))){
+  message("Bulk data, no cell specificity")
+  cellSpecific = FALSE
+}else{
+  cellSpecific = TRUE
+}
+
 # references
-geneType <- read.csv(paste0(LOGenDir,"0_utils/references/gencode.v40.annotation.geneannotation_corrected.csv"), header = T)
+if(unique(input$manifest$species) == "mouse"){
+  geneType <- read.csv(paste0(LOGenDir,"0_utils/references/gencode.vM22.annotation.geneannotation_corrected.csv"), header = T)
+}else{
+  geneType <- read.csv(paste0(LOGenDir,"0_utils/references/gencode.v40.annotation.geneannotation_corrected.csv"), header = T)
+}
+
+numSample=length(unique(input$manifest$sample))
+if(numSample == 1){
+  multiplex = FALSE
+}else{
+  multiplex = TRUE
+}
+```
+
+```{r load_ERCC, include=FALSE}
 
 ## ---------------- ERCC 
 
@@ -79,20 +105,22 @@ if(is.null(ERCCDir)){
   ERCC_added = TRUE
   ERCCDir <- paste0(ERCCDir, "/")
 }
-utilsDir <- paste0(LRPipelineDir, "utils/")
-ercc_calculation <- read.csv(paste0(utilsDir, "ERCC_calculations.csv"))
-ercc_stats <- read.csv(paste0(utilsDir, "ERCC_Stats.csv"))
-ercc_calculation <- merge(ercc_calculation, ercc_stats, by.x = "ERCC_ID", by.y = "ERCC.ID")
 
 # ERCC files if true
 if(isTRUE(ERCC_added)){
-  file_path <- paste0(ERCCDir, "/", list.files(ERCCDir, pattern = "RulesFilter_result_classification\\.txt$"))
+  utilsDir <- paste0(LRPipelineDir, "utils/")
+  ercc_calculation <- read.csv(paste0(utilsDir, "ERCC_calculations.csv"))
+  ercc_stats <- read.csv(paste0(utilsDir, "ERCC_Stats.csv"))
+  ercc_calculation <- merge(ercc_calculation, ercc_stats, by.x = "ERCC_ID", by.y = "ERCC.ID")
+
+  file_path <- paste0(ERCCDir, "/", list.files(ERCCDir, pattern = "RulesFilter_result_classification\\.txt$", recursive = TRUE))
   message("Reading in ERCC file", file_path)
   ERCC_classFile <- fread(file_path, data.table = FALSE)
   ERCC_classFile <- ERCC_classFile %>% filter(filter_result == "Isoform") 
   monoexonic <- ERCC_classFile[ERCC_classFile$subcategory == "mono-exon" & ERCC_classFile$structural_category != "full-splice_match","isoform"]
   ERCC_classFile <- ERCC_classFile %>% filter(!isoform %in% monoexonic)
-  ERCC_demux <- fread(paste0(ERCCDir, "/demux_fl_count.csv"), data.table = F)
+  ERCC_demux_file <- list.files(ERCCDir, pattern = "demux_fl_count\\.csv$", recursive = TRUE, full.names = TRUE)
+  ERCC_demux <- fread(ERCC_demux_file, data.table = F)
 }
 
 ```
@@ -101,21 +129,21 @@ if(isTRUE(ERCC_added)){
 
 This report documents the internal quality control (QC) process of long-read sequencing data generated at the University of Exeter Medical School for the following study:
 
-**Title:** `r params$studyName`
+**Title:** `r unique(input$manifest$studyName)`
 
 **Date of QC:** `r format(Sys.Date(), format="%d %B %Y")`
 
-**Species:** `r  unique(manifest$species)` 
+**Species:** `r  unique(input$manifest$species)` 
 
-**Number of samples:** `r  length(unique(manifest$sample))` 
+**Number of samples:** `r  length(unique(input$manifest$sample))` 
 
-**Number of individuals:** `r  length(unique(manifest$individual))` 
+**Number of individuals:** `r  length(unique(input$manifest$individual))` 
 
-**Number of flow cells/batch:** `r  length(unique(manifest$batch))` 
+**Number of flow cells/batch:** `r  length(unique(input$manifest$batch))` 
 
 **ERCC added:** `r ERCC_added`
 
-**Sample tissue:** `r  unique(manifest$tissue)` 
+**Sample tissue:** `r  unique(input$manifest$tissue)` 
 
 **Project data path:** `r rootDir`
 
@@ -125,7 +153,7 @@ Below is the full list of samples imported.
 
 ```{r manifest, fig.width = 12, fig.height = 6, echo = FALSE}
 # manifest
-datatable(manifest,
+datatable(input$manifest %>% select(-studyName),
           caption = "Phenotype information",
           options = list(
             pageLength = 5,
@@ -144,25 +172,18 @@ For any given sequencing run (ONT flow cell) where multiplexing is performed, th
 
 ```{r demuxStats, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: bar plot shows the number of full-length (FL) reads obtained for each individual after sequencing (pre-alignment)."}
 
-# data-wrangle for readstats.txt for demultiplexed samples
-demuxStats <- lapply(list.files(path = paste0(rootDir, "/1b_demultiplex_merged/"), pattern = "readstats", full = T), function(x) 
-  fread(x, data.table = F))
-demuxStats <- rbindlist(demuxStats, idcol = "sampleNum") %>% mutate(sample = word(file,c(1),sep=fixed("_")))
-demuxStats$num_seqs <- as.numeric(gsub(",", "", demuxStats$num_seqs))
-demuxStats <- merge(demuxStats, manifest, by = "sample") 
-
 # table
-knitr::kable(demuxStats[, c("sample", "num_seqs", "sum_len", "N50")], 
+knitr::kable(input$demuxStats[, c("sample", "num_seqs", "sum_len", "N50")], 
              col.names = c('sample', 'Number of reads', 'Number of bases', 'N50'),
              caption = "Table: summary of demultiplexing statistics for each sample, including the number of reads, the total number of bases, and the N50 value.") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
 
 
 # plot
-if("cellType" %in% colnames(manifest)){
-  p <- ggplot(demuxStats, aes(x = individual, y = num_seqs, fill = cellType)) 
+if(isTRUE(cellSpecific)){
+  p <- ggplot(input$demuxStats, aes(x = individual, y = num_seqs, fill = cellType)) 
 }else{
-  p <- ggplot(demuxStats, aes(x = individual, y = num_seqs)) 
+  p <- ggplot(input$demuxStats, aes(x = individual, y = num_seqs)) 
 }
 
 p <- p +
@@ -179,29 +200,8 @@ Post alignment to the reference genome, we are looking for a near-100% alignment
 
 ```{r alignedStats, fig.width = 12, fig.height = 6, echo = FALSE}
 
-# input of mapped stats 
-nameAlignedStats <- c(
-  "read_name",                # Name of the nanopore read
-  "target_sequence",          # Name of the target sequence
-  "start_position",           # Start position of the alignment on the target sequence
-  "read_length",              # Length of the original nanopore read
-  "aligned_length",           # Length of the aligned part of the nanopore read
-  "aligned_fraction",         # Fraction of the aligned part of the nanopore read over the original length
-  "matches",                  # Number of matched nucleotides in the alignment
-  "identity_percentage",      # Fraction of matched nucleotides over the aligned length
-  "strand",                   # Strand where the nanopore read aligns
-  "mismatches",               # Number of mismatches in the alignment
-  "insertions",               # Number of insertions in the alignment
-  "deletions"                 # Number of deletions in the alignment
-)
-mappedStats <- lapply(list.files(path = paste0(rootDir, "/3_minimap/"), pattern = "mapped", full = T), function(x) 
-  fread(x, col.names = nameAlignedStats, data.table = F))
-names(mappedStats) <- list.files(path = paste0(rootDir, "/3_minimap/"), pattern = "mapped")
-mappedStats <- rbindlist(mappedStats, idcol = "file") 
-mappedStats$sample <- str_remove(mappedStats$file, "_merged_combined_mappedstats.txt")
-
 # table
-alignmentStats <- mappedStats %>%
+alignmentStats <- input$mappedStats %>%
   group_by(sample) %>%
   summarise(
     num_reads = n(),  
@@ -210,7 +210,7 @@ alignmentStats <- mappedStats %>%
   )
 
 knitr::kable(alignmentStats, col.names = c("Sample","number of reads", "aligned coverage", "aligned identity"),
-             caption = "Table: summary of alignment statistics of the number of reads alignmed, the mean aligned coverage and identity of those reads") %>%
+             caption = "Table: summary of alignment statistics of the number of reads alignmed, the mean aligned coverage and identity of #those reads") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
 ```
 
@@ -218,10 +218,10 @@ For a transcriptome sequencing library, we are looking for a normal distribution
 
 ```{r alignedPlot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: distribution of the sample read length post alignment."}
 
-ggplot(mappedStats, aes(x = sample, fill = sample, y = read_length)) +
+ggplot(input$mappedStats, aes(x = sample, fill = sample, y = read_length)) +
   geom_violin() + theme_classic() +
   labs(y = "Read Length (bp)", x = "Sample") +
-  theme(legend.position="none")
+  theme(legend.position="none") + scale_y_log10() 
 
 ```
 
@@ -230,7 +230,7 @@ ggplot(mappedStats, aes(x = sample, fill = sample, y = read_length)) +
 The genome coverage would depend if sequencing was performed on a whole transcriptome level or at a targeted level. 
 
 ```{r chromStats, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedrightFigure: number of reads aligned to each chromosome."}
-dat <- mappedStats %>% group_by(sample, target_sequence) %>% tally() %>% 
+dat <- input$mappedStats %>% group_by(sample, target_sequence) %>% tally() %>% 
   filter(!grepl("_", target_sequence)) %>% as.data.frame()
 
 ggplot(dat, aes(x = as.factor(target_sequence), y = n)) + 
@@ -238,7 +238,8 @@ ggplot(dat, aes(x = as.factor(target_sequence), y = n)) +
   geom_point(aes(colour = sample)) +
   theme_classic() +
   scale_y_continuous(labels = label_comma()) +
-  labs(x = "Chromosome", y = "Number of reads")
+  labs(x = "Chromosome", y = "Number of reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
 ## Standards
@@ -253,14 +254,14 @@ ggplot(dat, aes(x = as.factor(target_sequence), y = n)) +
 
 
 ```{r ERCC, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedrightFigure: number of reads aligned to each chromosome.", eval = ERCC_added}
-ERCC_alignedStats <- read_ERCC_alignedStats(ERCCDir)
+ERCC_alignedStats <- read_ERCC_alignedStats(paste0(ERCCDir,"3_minimap"))
 detectedNumERCC <- length(unique(ERCC_alignedStats$target_sequence))
 
 # tally the number of ERCC
 numDetected <- ERCC_alignedStats %>% group_by(sample) %>% tally(name = "number")
 
 # merge back with original number of reads per sample
-numDetected <- merge(demuxStats[,c("sample","num_seqs")], numDetected, by = "sample") %>% 
+numDetected <- merge(input$demuxStats[,c("sample","num_seqs")], numDetected, by = "sample") %>% 
   mutate(perc = number/num_seqs * 100)
 
 numDetectedPerSample <- ERCC_alignedStats %>% group_by(sample) %>% summarise(unique_count = n_distinct(target_sequence))
@@ -277,8 +278,6 @@ ERCC_detected <- detect_ERCC(ERCC_alignedStats)
 `r if (ERCC_added) {
   "
   We expect that the ERCC detected would depend on the amount and not on the length i.e. ERCC with the known higher amounts are more likely to be sequenced, whereas longer ERCC are as likely to be sequenced as the shorter ERCC molecules. We also expect this phenomenon to be consistent across all the samples.
-
-  ### Factors impacting detection
   "
 }`
 
@@ -314,8 +313,6 @@ pRedundant[[2]]
 
 `r if (ERCC_added) {
   "
-  #### Isoform proportions
-  
   Despite the significant number of *unique isoforms*, there should only be one or two **dominant** isoform per ERCC molecule whereby the remaining isoforms are insignificant - i.e. a *minor* isoform, defined by less than 5% of the total proportion.
   
   Below are plots of the *isoform* landscape of each ERCC molecule per sample. The number in the grey bar refers to the number of minor ERCC molecules, and the individual lines dissecting the bars refer to the proportion of the major isoform.
@@ -355,22 +352,16 @@ We can use the reads aligned to the X and Y chromosome to infer the sex of the s
 
 ```{r sexCheck, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: number of reads aligned to X and Y chromosome over total reads aligned to X and Y chromosome"}
 
-# data-wrangle of final filtered reads
-filteredAlignment <- lapply(list.files(path = paste0(rootDir, "/5_cupcake/5_align/PAF"), pattern = "mappedstats", full = T), function(x) 
-  fread(x, data.table = F, col.names = nameAlignedStats))
-names(filteredAlignment) <- list.files(path = paste0(rootDir, "/5_cupcake/5_align/PAF"), pattern = "mappedstats")
-filteredAlignment <- rbindlist(filteredAlignment, idcol = "file") 
-filteredAlignment$sample <- str_remove(filteredAlignment$file, "_mapped_mappedstats.txt")
-
 # X chromosome, Y chromsoome, autosomal reads
-xReads <- filteredAlignment  %>% filter(target_sequence %in% c("chrX")) %>% group_by(sample) %>% tally(name = "chrxReads")
-yReads <- filteredAlignment  %>% filter(target_sequence %in% c("chrY")) %>% group_by(sample) %>% tally(name = "chrYReads")
-autoReads <- filteredAlignment  %>% filter(!target_sequence %in% c("chrX","chrY")) %>% group_by(sample) %>% tally(name = "autoReads")
+xReads <- input$filteredAlignment %>% filter(target_sequence %in% c("chrX")) %>% group_by(sample) %>% tally(name = "chrxReads")
+yReads <- input$filteredAlignment %>% filter(target_sequence %in% c("chrY")) %>% group_by(sample) %>% tally(name = "chrYReads")
+autoReads <- input$filteredAlignment %>% filter(!target_sequence %in% c("chrX","chrY")) %>% group_by(sample) %>% tally(name = "autoReads")
 
 # fold cange of chrX over all reads, chrY over all reads
 sexCheckReads <- Reduce(function(x, y) merge(x, y, by = "sample", all = TRUE), list(xReads, yReads, autoReads)) %>%
+  replace(is.na(.), 0) %>%
   mutate(FCX = chrxReads/(chrxReads + chrYReads), FCY = chrYReads/(chrxReads + chrYReads))
-sexCheckReads <- merge(sexCheckReads, manifest, by = "sample")
+sexCheckReads <- merge(sexCheckReads, input$manifest, by = "sample")
 
 # plot
 ggplot(sexCheckReads, aes(x = FCX, y = FCY, colour = sex)) +
@@ -389,51 +380,27 @@ As part of the final bioinformatics pipieline, reads are collopsed into transcri
 
 ```{r reasonFiltered, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: box-plot of the number of reads classified as artifacts from reverse-transcription step, and subsequently removed"}
 
-# classifiction file with all isoforms and artifacts
-preFilteredClassFileName <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "RulesFilter_result_classification.txt$", full = T)
-preFilteredClassFile <- fread(preFilteredClassFileName, data.table = F)
-xaxislevelsF1 <- c("full-splice_match","incomplete-splice_match","novel_in_catalog","novel_not_in_catalog","genic","antisense","fusion","intergenic","genic_intron")
-xaxislabelsF1 <- c("FSM", "ISM", "NIC", "NNC", "Genic_Genomic",  "Antisense", "Fusion","Intergenic", "Genic_Intron")
-preFilteredClassFile$structural_category = factor(preFilteredClassFile$structural_category,
-                                        labels = xaxislabelsF1, 
-                                        levels = xaxislevelsF1,
-                                        ordered=TRUE)
-
-# classification file with mono-exonic isoforms retained
-class_file <- preFilteredClassFile %>% filter(filter_result == "Isoform")
-monoexonic <- class_file[class_file$subcategory == "mono-exon" & class_file$structural_category != "FSM","isoform"]
-class_file <- class_file %>% filter(!isoform %in% monoexonic)
-
-# expression
-demux <- list.files(path = paste0(rootDir,"/5_cupcake/6_collapse"), pattern = "demux_fl_count.csv", full = T)
-demux <- fread(demux, data.table = F)
-demuxFiltered  <- demux %>% filter(id %in% class_file$isoform) %>% tibble::column_to_rownames(., var = "id")
-
-# reasons why isoforms filtered
-ReasonFiltered <- list.files(path = paste0(rootDir,"/5_cupcake/7_sqanti3"), pattern = "adultSortedNuclei_collapsed_filtering_reasons", full = T)
-ReasonFiltered  <- fread(ReasonFiltered, data.table = F)
-
 # isolate the reads that are corresponding to the artifacts
-artifacts <- preFilteredClassFile[preFilteredClassFile$filter_result == "Artifact","isoform"]
-passedReads <- preFilteredClassFile[preFilteredClassFile$filter_result == "Isoform","isoform"]
-artifactDemux <- demux[demux$id %in% artifacts,] 
-artifactDemux <- merge(artifactDemux, ReasonFiltered[,c("isoform","reasons")], by.x = "id", by.y = "isoform")
+artifacts <- input$preFilteredClassFile[input$preFilteredClassFile$filter_result == "Artifact","isoform"]
+passedReads <- input$preFilteredClassFile[input$preFilteredClassFile$filter_result == "Isoform","isoform"]
+artifactDemux <- input$demux[input$demux$id %in% artifacts,] 
+artifactDemux <- merge(artifactDemux, input$ReasonFiltered[,c("isoform","reasons")], by.x = "id", by.y = "isoform")
 artifactSummary <- artifactDemux %>% 
   select(-id) %>%
   group_by(reasons) %>%
   summarise(across(where(is.numeric), sum, na.rm = TRUE))
 
 # stepwise stats filtering
-stage1Stats <- demuxStats[,c("sample","num_seqs")]
-stage2Stats <- as.data.frame(mappedStats %>% group_by(sample) %>% tally(name = "aligned_seqs"))
-stage3Stats <- as.data.frame(filteredAlignment %>% group_by(sample) %>% tally(name = "corrected_seqs"))
-stage4Stats <- as.data.frame(demux %>% select(-id) %>% apply(.,2,sum))       
+stage1Stats <- input$demuxStats[,c("sample","num_seqs")]
+stage2Stats <- as.data.frame(input$mappedStats %>% group_by(sample) %>% tally(name = "aligned_seqs"))
+stage3Stats <- as.data.frame(input$filteredAlignment %>% group_by(sample) %>% tally(name = "corrected_seqs"))
+stage4Stats <- as.data.frame(input$demux %>% select(-id) %>% apply(.,2,sum))       
 colnames(stage4Stats) <- "collapsedReads"
-passedReads <- preFilteredClassFile[preFilteredClassFile$filter_result == "Isoform","isoform"] 
-stage5Stats <- as.data.frame(demux %>% filter(id %in% passedReads) %>% select(-id) %>% apply(.,2,sum))              
+passedReads <- input$preFilteredClassFile[input$preFilteredClassFile$filter_result == "Isoform","isoform"] 
+stage5Stats <- as.data.frame(input$demux %>% filter(id %in% passedReads) %>% select(-id) %>% apply(.,2,sum))              
 colnames(stage5Stats) <- "finalReads"
 # demux file to keep only the finalised isoforms
-stage6Stats <- as.data.frame(demuxFiltered %>% apply(.,2,sum)) 
+stage6Stats <- as.data.frame(input$demuxFiltered %>% apply(.,2,sum)) 
 colnames(stage6Stats) <- "monoFilteredReads"
 
 # filter demux file
@@ -441,18 +408,19 @@ colnames(stage6Stats) <- "monoFilteredReads"
 count_non_zero <- function(row) {
   return(sum(row != 0))
 }
-nreads <- apply(demuxFiltered,1,sum)
-nsample <- apply(demuxFiltered, 1, count_non_zero)
+demuxFiltered <- input$demuxFiltered
+nreads <- apply(input$demuxFiltered,1,sum)
+nsample <- apply(input$demuxFiltered, 1, count_non_zero)
 demuxFiltered$nreads <- nreads
 demuxFiltered$nsample <- nsample
 demuxFiltered <- demuxFiltered %>% filter(nreads >= 2, nsample >= 2)
 
 stage7Stats <- as.data.frame(demuxFiltered %>% select(-nreads, -nsample) %>% apply(.,2,sum)) 
 colnames(stage7Stats) <- "expressionFilteredReads"
-stage4Stats <- merge(manifest[,c("ID","sample")], stage4Stats, by.x = "ID", by.y = 0)
-stage5Stats <- merge(manifest[,c("ID","sample")], stage5Stats, by.x = "ID", by.y = 0)
-stage6Stats <- merge(manifest[,c("ID","sample")], stage6Stats, by.x = "ID", by.y = 0)
-stage7Stats <- merge(manifest[,c("ID","sample")], stage7Stats, by.x = "ID", by.y = 0)
+stage4Stats <- merge(input$manifest[,c("ID","sample")], stage4Stats, by.x = "ID", by.y = 0)
+stage5Stats <- merge(input$manifest[,c("ID","sample")], stage5Stats, by.x = "ID", by.y = 0)
+stage6Stats <- merge(input$manifest[,c("ID","sample")], stage6Stats, by.x = "ID", by.y = 0)
+stage7Stats <- merge(input$manifest[,c("ID","sample")], stage7Stats, by.x = "ID", by.y = 0)
 
 fullStats <- Reduce(function(x, y) merge(x, y, by = "sample", all = TRUE), 
                     list(stage1Stats, stage2Stats, stage3Stats, stage4Stats, stage5Stats, stage6Stats, stage7Stats)) 
@@ -464,7 +432,7 @@ fullStats <- fullStats %>% select(-contains("ID")) %>%
          percMonofiltered = monoFilteredReads/num_seqs * 100,
          percExpressionFiltered = expressionFilteredReads/num_seqs * 100) 
 
-fullStats <- merge(fullStats, manifest, by = "sample")
+fullStats <- merge(fullStats, input$manifest, by = "sample")
 
 artifactSummary$reasons <- gsub("High perc_A_downstream_TTS", "intra-priming", artifactSummary$reasons)
 artifactSummary$reasons <- gsub("Out RTS_stage", "RT switching", artifactSummary$reasons)
@@ -477,6 +445,100 @@ reshape2::melt(artifactSummary, value.name = "removedFL", variable.name = "ID") 
   labs(x = "Reasons filtered", y = "Percentage of reads removed")
 ```
 
+## Mono-exonic isoforms
+
+Shown below is a table of the number of mono-exonic transcripts (transcripts with 1 exon) and corresponding full-length reads detected in the dataset (across all samples) prior to SQANTI filtering (see section above). 
+
+::: note
+Further filtering refers to keeping only mono-exonic transcripts that are classified as FSM, ISM, NIC, NNC, Antisense and Fusion
+:::
+
+```{r monoExonic}
+monoExonicSummary <- monoExonic_summary(input$preFilteredClassFile, input$demux)
+
+knitr::kable(monoExonicSummary, 
+             col.names = c(''),
+             caption = "Table: Summary of monoexonic transcripts"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+Below is a plot of the length of mono-exonic transcripts in the dataset classified as artifact and isoform by SQANTI filtering.
+
+```{r monoExonicLength, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Violin plot of the length of mono-exonic transcripts by structural category"}
+input$preFilteredClassFile %>% filter(exons == 1) %>%
+  ggplot(., aes(x = structural_category, y = length, fill = filter_result)) +
+  geom_violin() +scale_y_log10() + theme_classic() +
+  labs(x = "structural_category", y = "length (bp)") 
+
+```
+## Short isoforms
+
+A good quality metric of the library prepartion/sample/sequencing run is the proportion of short isoforms. These short isoforms could either be real and biologically meaningful (i.e. short regulatory RNA) or artifacts from library preparation, which are typically presented as short fragments randomly distributed across the gene/genome i.e intergenic/genic intron/genic genomic. 
+
+Tabulated below are the number of short transcripts detected in the dataset after applying a length threshold (200bp, 500bp, 750bp), and the number kept:  
+- after applying SQANTI filter (removing intrapriming and RT switch artifacts)  
+- further removing transcripts identified as mono-exonic and classified as either mono-exonic intergenic, genic intronic or genic genomic  
+- keeping transcripts that are detected with 2 reads across any 2 samples.
+
+::: note
+All the transcripts that are kept under the 200bp threshold will also be kept in the 500bp threshold, and likewise those in the 500bp would also be kept in the 750bp. The purpose of the table is to identify the length at which there is a dramatic increase of short transcripts detected, even when the final proportion of "TRUE meaningful transcripts" kept is low. 
+:::
+
+```{r shortIsoforms}
+
+# different length threshold to test
+lengths_to_test <- c(200, 500, 750)
+
+# create column nreads and nsamples in demux file
+demux <- input$demux
+row.names(demux) <- demux$id
+demux <- demux %>% select(-id)
+nreads <- apply(demux,1,sum)
+nsample <- apply(demux, 1, count_non_zero)
+demux$nreads <- nreads
+demux$nsample <- nsample
+
+# generate subsetted classification file by length
+df <- lapply(lengths_to_test, function(x) subset_class_by_length(x, input$preFilteredClassFile, demux, input$ReasonFiltered, geneType))
+names(df) <- lengths_to_test
+
+# generate summary stats of the subsetted classification file by length
+dfStats <- lapply(df, function(x) summarise_subsetted_classLength(x, input$preFilteredClassFile))
+outputStats <- t(do.call(rbind, dfStats))
+colnames(outputStats) <- lengths_to_test
+
+knitr::kable(outputStats, caption = "Table: Summary of short transcripts") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+Below is a table of the full-length reads of short transcripts
+
+```{r shortIsoformsReads}
+
+dfStats <- lapply(df, function(x) summarise_subsetted_classLength_read(x, demux))
+outputStats <- t(do.call(rbind, dfStats))
+colnames(outputStats) <- lengths_to_test
+
+knitr::kable(outputStats, caption = "Table: Summary of short transcripts at the read level") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+Below is a plot of the proportion of short transcripts (with the length threshold of 200bp, 500bp, 750bp) that are discarded during SQANTI filtering either due to RT switching (Out RT stage), intrapriming (High perc_A_downstream_TTS) or lack of support of non-canonical junctions. 
+
+```{r shortIsoformsFiltered, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: proportion of short transcripts discarded during SQANTI filtering"}
+SQANTIFilteredReasonDf <- lapply(df, function(x) subset_class_length_SQFiltered(x))
+SQANTIFilteredReasonDf <- rbindlist(SQANTIFilteredReasonDf, idcol = "lengthCutOff") 
+
+ggplot(SQANTIFilteredReasonDf, aes(y = reasons, x = perc, fill = structural_category)) + geom_bar(stat = "identity") +
+  facet_grid(lengthCutOff~.) +
+  labs(x = "Percentage of reads discarded", y = "Reasons for SQANTI filter") +
+  theme_classic()
+
+```
+
 ## Expression threshold
 
 To reduce false negatives and increase confidence of identifying "true" isoforms, we can apply an expression filter threshold i.e. an isoform is kept only if it has more than 2 reads across any 2 samples.
@@ -485,9 +547,7 @@ The below plot shows the proportion of reads retained after applying a step-wise
 
 ```{r sensitivity, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Line plot of the number of reads retained post SQANTI filtering after applying an expression threshold"}
 
-demuxFiltered  <- demux %>% filter(id %in% class_file$isoform) %>% tibble::column_to_rownames(., var = "id")
-
-sensitivity <- demuxFiltered 
+sensitivity <- input$demuxFiltered 
 colnames(sensitivity) <- paste0("FL.", colnames(sensitivity))
 sensitivtyOutput <- no_of_isoforms_sample(sensitivity)
 sensitivtyOutput[[3]]$cate_sumFL <- categories(as.numeric(as.character(sensitivtyOutput[[3]]$sum_FL)))
@@ -542,84 +602,7 @@ ggplot(fullStatsPlot , aes(x = stage, y = perc, group = sample, colour = sample)
 
 The following sections assess whether the samples sequenced reflect biological phenomena and if there are any covariates that should be accounted in downstream analysis. 
 
-## Principle component analysis
 
-```{r pca, fig.width = 12, fig.height = 6, echo = FALSE}
-
-res <- as.data.frame(t(demuxFiltered)) 
-pca_res <- prcomp(as.matrix(res), scale. = TRUE)
-pca.scores <- as.data.frame(pca_res$x)
-pca_res.pca <- pca_res$sdev^2/sum(pca_res$sdev^2)
-pca_res.finalpca <- pca.scores[,which(pca_res.pca > 0.01)]
-
-```
-
-To identify and visually inspect potential outliers we performed principal component analysis on the number of read counts across the isoforms in the final dataset. We identified `r nrow(pca.scores[,which(pca_res.pca > 0.01)])` PCs which explained > 1% of the variance and focused on these for characterisation. 
-
-
-```{r pca_overallplot, fig.width = 12, fig.height = 6, echo = FALSE}
-res <- as.data.frame(t(demuxFiltered)) 
-pca_res <- prcomp(as.matrix(res), scale. = TRUE)
-pca.scores <- as.data.frame(pca_res$x)
-pca_res.pca <- pca_res$sdev^2/sum(pca_res$sdev^2)
-pca_res.finalpca <- pca.scores[,which(pca_res.pca > 0.01)]
-
-par(mar = c(4,4,1,1))
-pca_var_explained <- (pca_res$sdev^2 / sum(pca_res$sdev^2)) * 100
-plot(1:20, pca_var_explained[1:20], type = "b", ylab = "% variance explained", xlab = "Principal Components")
-abline(h=1, col = "red")
-```
-
-```{r pca_plot, fig.width = 12, fig.height = 4, echo = FALSE}
-# Extract PC1 and PC2 scores
-pca.scores$cellType <- manifest[match(row.names(pca.scores), manifest$ID), "cellType"]         # Add cellType as a column
-pca.scores$sex <- manifest[match(row.names(pca.scores), manifest$ID), "sex"]         # Add cellType as a column
-pca.scores$individual <- manifest[match(row.names(pca.scores), manifest$ID), "individual"]         # Add cellType as a column
-
-# List of grouping variables (e.g., factors for coloring)
-group_vars <- c("cellType", "sex", "individual")
-
-# List of PC combinations to plot
-pc_combinations <- list(
-  c("PC1", "PC2"),
-  c("PC1", "PC3")
-)
-
-# Loop through group variables and PC combinations
-PCA_plots <- list()
-count=1
-for (group_var in group_vars) {
-  for (pc_pair in pc_combinations) {
-    x_pc <- pc_pair[1]
-    y_pc <- pc_pair[2]
-    
-    # Dynamically generate plot
-    p <- ggplot(pca.scores, aes_string(x = x_pc, y = y_pc, color = group_var)) +
-      geom_point(size = 3) + 
-      labs(
-        title = paste0("Coloured by ", group_var),
-        subtitle = paste("PCA:", x_pc, "vs", y_pc),
-        x = paste("Principal Component", substr(x_pc, 3, 3)),
-        y = paste("Principal Component", substr(y_pc, 3, 3))
-      ) +
-      theme_classic() +
-      scale_color_brewer(palette = "Set2")
-    
-    # Print the plot
-    PCA_plots[[count]] <- p
-    count = count + 1
-  }
-}
-
-for (i in seq(1, length(PCA_plots), by = 2)) {
-  # Select the next 2 plots (if available)
-  current_plots <- PCA_plots[i:min(i + 1, length(PCA_plots))] 
-  
-  # Print the 2 plots in a grid layout
-  print(plot_grid(plotlist = current_plots, ncol = 2))
-}
-
-```
 
 ## Normalisation
 
@@ -628,10 +611,10 @@ for (i in seq(1, length(PCA_plots), by = 2)) {
 # calculate TPM 
 # https://github.com/ConesaLab/SQANTI3/wiki/Running-SQANTI3-Quality-Control
 # raw FL read for transcript in sample 1/total FL transcript in sample 1 * 10^6
-demuxCollapsed <- demux %>% filter(id %in% preFilteredClassFile$isoform)
-row.names(demuxCollapsed) <- demux$id
+demuxCollapsed <- input$demux %>% filter(id %in% input$preFilteredClassFile$isoform)
+row.names(demuxCollapsed) <- input$demux$id
 demuxTPM <- apply(demuxCollapsed %>% select(-id),2,function(x){x/sum(x) * 1000000})
-demuxFilteredTPM <- apply(demuxFiltered,2,function(x){x/sum(x) * 1000000})
+demuxFilteredTPM <- apply(input$demuxFiltered,2,function(x){x/sum(x) * 1000000})
 
 ```
 
@@ -641,17 +624,17 @@ We expect the gene expression of house keeping genes to be consistent across all
 
 ```{r geneCellExpressions, fig.width = 12, fig.height = 6, echo = FALSE}
 plot_geneExp <- function(gene){
-  gclass_file <- preFilteredClassFile %>% filter(associated_gene == gene) %>% select(isoform, associated_gene)
+  gclass_file <- input$preFilteredClassFile %>% filter(associated_gene == gene) %>% select(isoform, associated_gene)
   
   geneExp <- merge(gclass_file, demuxTPM, by.x = "isoform", by.y = 0) %>% 
     select(-isoform,-associated_gene) %>%
     apply(., 2, sum) %>% 
     reshape2::melt(value.name = "exp") 
   
-  geneExp <- merge(manifest, geneExp, by.x = "ID", by.y = 0)
+  geneExp <- merge(input$manifest, geneExp, by.x = "ID", by.y = 0)
   geneExp <<- geneExp  
   
-  if("cellType" %in% colnames(manifest)){
+  if("cellType" %in% colnames(input$manifest)){
   p <- ggplot(geneExp, aes(x = cellType, y = exp)) + geom_boxplot(outliers = FALSE) + 
     geom_jitter(size = 3, aes(colour = individual)) + 
     theme_classic() + 
@@ -661,27 +644,49 @@ plot_geneExp <- function(gene){
   return(p)
 }
 
-housekeepingGene <- c("GAPDH")
-plot_geneExp("GAPDH")
+
+if(unique(input$manifest$species) == "mouse"){
+  housekeepingGene <- c("Gapdh")
+  plot_geneExp("Gapdh")
+}else{
+  housekeepingGene <- c("GAPDH")
+  plot_geneExp("GAPDH")
+}
 
 ```
 
 ### Cell-specific genes
 
-```{r neuronalExpression, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: neuronal-specific gene expressions"}
+`r if (cellSpecific) {
+  "
+  The below metrics and plots relate to the gene expression profiles of cell-specific markers. 
+  "
+} else {
+  "Experiment was performed on bulk data - cell specificity cannot be determined"
+}`
 
-if("cellType" %in% colnames(manifest)){
-  NeuronalGenes <- c("CABP1","PRRG3","RBFOX3","ENO2")
-  NeuonralGenePlots <- lapply(NeuronalGenes, function(gene) plot_geneExp(gene))
-  plot_grid(plotlist = NeuonralGenePlots)
+
+```{r neuronalExpression, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: neuronal-specific gene expressions", eval = cellSpecific}
+
+if(unique(input$manifest$species) == "mouse"){
+  NeuronalGenes <- c("Cabp1","Prrg3","Rbfox3","Eno2")
 }else{
-  message("FANS not performed; cell-specific gene plots subsequently not displayed")
+  NeuronalGenes <- c("CABP1","PRRG3","RBFOX3","ENO2")
 }
+
+NeuonralGenePlots <- lapply(NeuronalGenes, function(gene) plot_geneExp(gene))
+plot_grid(plotlist = NeuonralGenePlots)
+
 ```
 
-```{r oligoCellExpressions, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: oligodendrocyte-specific gene expressions"}
+```{r oligoCellExpressions, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: oligodendrocyte-specific gene expressions", eval = cellSpecific}
 
-OligoGenes <-  c("SOX10", "OPALIN","ST18","OLIG1")
+if(unique(input$manifest$species) == "mouse"){
+  OligoGenes <-  c("Sox10", "Opalin","St18","Olig1")
+}else{
+  OligoGenes <-  c("SOX10", "OPALIN","ST18","OLIG1")
+}
+
 OligoGenePlots <- lapply(OligoGenes, function(gene) plot_geneExp(gene))
 plot_grid(plotlist = OligoGenePlots)
 
@@ -689,15 +694,21 @@ plot_grid(plotlist = OligoGenePlots)
 
 # QC: Saturation 
 
-Below are rarefaction curves of the coverage of RNA isoform diversity by SQANTI's structural category with added samples. We anticipate a plateau of the number of "new" transcripts added with each sequential sample. 
+`r if (multiplex) {
+  "
+  
+  Below are rarefaction curves of the coverage of RNA isoform diversity by SQANTI's structural category with added samples. We anticipate a plateau of the number of new transcripts added with each sequential sample. 
+  Note:  The more abundant transcripts are always detected first, so FSM transcripts will also be the first to be detected compared to novel transcripts. 
+  "
+} else {
+  "Saturation curve not available for one sample."
+}`
 
-::: note
-The more abundant transcripts are always detected first, so FSM transcripts will also be the first to be detected compared to novel transcripts. 
-:::
 
-```{r saturation_plot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Cumulative number of transcripts with added sample"}
-class_file <- merge(class_file, demuxFiltered, by.x = "isoform", by.y = 0)
-plot_cumulative_added_sample(class_file, demuxFiltered)
+
+```{r saturation_plot, fig.width = 12, fig.height = 6, echo = FALSE, fig.bottomcaption = TRUE, fig.cap="\\raggedright Figure: Cumulative number of transcripts with added sample", eval = multiplex}
+class_file <- merge(input$class_file, input$demuxFiltered, by.x = "isoform", by.y = 0)
+plot_cumulative_added_sample(class_file, input$demuxFiltered)
 ```
 
 # Descriptives
@@ -707,7 +718,9 @@ plot_cumulative_added_sample(class_file, demuxFiltered)
 Below is a basic summary of the number of transcripts and genes found in the transcriptome of all the samples.
 
 ```{r summary} 
+class_file <- merge(input$class_file, input$demuxFiltered, by.x = "isoform", by.y = 0)
 class_file_annoGenes <- class_file[!grepl("novel", class_file$associated_gene),]
+
 summary <- descriptives_summary(class_file, class_file_annoGenes)
 knitr::kable(summary, 
              col.names = c(''),
@@ -734,7 +747,7 @@ class_file %>% group_by(Class) %>% tally() %>%
 ```{r geneExpression}
 
 dat <- class_file %>% 
-  select(associated_gene, colnames(demuxFiltered)) %>%
+  select(associated_gene, colnames(input$demuxFiltered)) %>%
   group_by(associated_gene) %>% 
   summarise(across(everything(), sum)) %>% 
   tibble::column_to_rownames(., var = "associated_gene")

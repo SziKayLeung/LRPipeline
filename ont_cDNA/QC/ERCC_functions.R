@@ -154,8 +154,11 @@ plot_usage_persample <- function(ERCC_classFile, ERCC_demux) {
     percentages[[sample]] <- percentage_table
     
     # Create the plot
+    percentage_table$structural_category <- factor(percentage_table$structural_category, 
+                                               levels = rev(unique(percentage_table$structural_category)))
+
     plots[[sample]] <- percentage_table %>%
-      ggplot(aes(x = chrom, y = as.numeric(perc), fill = forcats::fct_rev(structural_category))) +
+      ggplot(aes(x = chrom, y = as.numeric(perc), fill = structural_category)) +
       geom_bar(stat = "identity", color = "black", size = 0.2) +
       theme_classic() +
       labs(x = "Gene", y = "Isoform fraction (%)", title = sample) +
