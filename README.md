@@ -2,7 +2,9 @@
 
 This is a repository of scripts to run the long-read sequencing pipeline for ONT cDNA datasets, and are developed for a HPC system with the SLURM job scheduler. 
 
-For more information, please visit the [wiki](https://github.com/SziKayLeung/LRPipeline/wiki)!  
+For more information, please visit the [wiki](https://github.com/SziKayLeung/LRPipeline/wiki)!
+
+Please ensure to read the below documentation before trying to run the pipeline. 
 1. [What is the pipeline?](https://github.com/SziKayLeung/LRPipeline/wiki/How-does-the-pipeline-work%3F)  
    
 2. What input files are needed?
