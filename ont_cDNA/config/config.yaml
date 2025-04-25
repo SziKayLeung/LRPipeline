@@ -18,7 +18,7 @@ export WKD_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/D_ONT
 export META_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/AD_BDR/0_metadata/B_ONT
 
 ## SKLeung scripts
-export LOGEN_ROOT=//lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
+export LOGEN_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
 
 
 ## ---------------------------
@@ -58,6 +58,19 @@ export ALL_SAMPLES_NAMES=($(awk -F "\"*,\"*" '{print $1}' ${BARCODE_CONFIG}))
 
 # sample names to replace barcode names downstream 
 SAMPLE_ID=${SCRIPT_ROOT}/config/sample_id.csv
+
+
+## ---------------------------
+
+# filtering expression (keep all isoforms with minimum 2 reads across any 2 samples)
+export nreads=2
+export nsamples=2
+
+# monoexonic filtering (iltering of mono-exonic isoforms that are classified as intergenic, genic intron, genic genomic)
+monoexonic=1
+
+# target genes for additional filtering (none)
+tgenesFile=NA
 
 ## ---------------------------
 

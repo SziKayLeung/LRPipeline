@@ -37,13 +37,13 @@ mkdir -p ${dir}/8_characterise
 ##-------------------------------------------------------------------------
 ## Characterisation with CPAT and colour by abundance
 
-# LOGEN: subset cupcake classification file by target genes
+# LOGEN: subset cupcake classification file 
 # merge cupcake classification file with abundance
 # filter cupcake classification file with minimum number of reads and counts
 subset_quantify_filter_tgenes.R \
 --classfile ${dir}/7_sqanti3/${NAME}_collapsed_RulesFilter_result_classification.txt \
 --expression ${dir}/6_collapse/demux_fl_count.csv \
---filter --nsample=${nsamples} --nreads=${nreads}
+--filter --nsample=${nsamples} --nreads=${nreads} --monoexonic=${monoexonic} --target_genes=${tgenesFile}
 
 # working variables
 finalanno=${dir}/7_sqanti3/${NAME}_collapsed_RulesFilter_result_classification.counts_filtered.txt 
