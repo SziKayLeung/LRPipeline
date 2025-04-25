@@ -72,6 +72,10 @@ monoexonic=1
 # target genes for additional filtering (none)
 tgenesFile=NA
 
+# CPAT input files
+export HEXAMER=/lustre/projects/Research_Project-MRC148213/lsl693/references/CPAT/Human_Hexamer.tsv
+export LOGITMODEL=/lustre/projects/Research_Project-MRC148213/lsl693/references/CPAT/Human_logitModel.RData
+
 ## ---------------------------
 
 ## Software 
