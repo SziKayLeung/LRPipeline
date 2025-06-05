@@ -35,18 +35,22 @@ export dir=$WKD_ROOT/5_cupcake
 if [ "${MULTIPLEXING}" == TRUE ]; then 
 
   # replace sample barcodes with sample names
-  replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID} -d=${dir}/5_align/combined 
-  replace_filenames_with_csv.py --copy --ext=filtered.fa -i=$WKD_ROOT/5_cupcake/5_align -f=${SAMPLE_ID}  -d=${dir}/5_align/combined_fasta 
-  
-  allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.sorted.bam)) 
-
+  awk -F, '{print $1 "_mapped," $2 "_mapped"}' $BARCODE_CONFIG > ${dir}/5_align/combined/mapped_barcode_config
+  replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${dir}/5_align/combined/mapped_barcode_config -d=${dir}/5_align/combined 
+    
 else
   
-  mkdir -p ${dir}/5_align/combined_fasta
-  filteredfa=($(ls ${WKD_ROOT}/5_cupcake/5_align/*filtered.fa))
-  for i in ${filteredfa[@]}; do echo $i; cp $i ${dir}/5_align/combined_fasta/ ; done
-  allfilteredmapped=($(ls ${dir}/5_align/*filtered.sorted.bam))
-  printf "%s\n" "${allfilteredmapped[@]}"
+  mkdir -p ${dir}/5_align/combined
+  
+  for sample_name in "${ALL_SAMPLES_NAMES[@]}"; do
+  
+     echo ${sample_name}       
+     filteredBam=($(ls ${WKD_ROOT}/5_cupcake/5_align/${sample_name}_[0-9][0-9]_mapped.filtered.sorted.bam))
+     echo "Merging ${sample_name} parts"
+     printf "%s\n" ${filteredBam[@]}
+     samtools merge -f ${dir}/5_align/combined/${sample_name}_mapped_filtered.sorted.bam ${filteredBam[@]}
+     
+  done
 
 fi 
 
@@ -54,6 +58,7 @@ fi
 if [ -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ]; then
   echo -e "Merging all files for collapse: \e[32mCompleted\e[0m"
 else 
+  allfilteredmapped=($(ls ${dir}/5_align/combined/*filtered.sorted.bam)) 
   ls ${allfilteredmapped[@]}
   samtools merge -f ${dir}/6_collapse/${NAME}_mapped.filtered.sorted.bam ${allfilteredmapped[@]}
 fi

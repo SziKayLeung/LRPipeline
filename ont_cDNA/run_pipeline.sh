@@ -47,26 +47,14 @@ if [ "${MULTIPLEXING}" == TRUE ]; then
     echo "Demultiplexing already performed"
   
   fi
-
-else
-  
-  sample=${ALL_SAMPLES_NAMES[0]}
-  mkdir -p ${WKD_ROOT}/1_basecalled/original
-  cp ${RAW_ROOT_DIR}/${sample}.fastq ${WKD_ROOT}/1_basecalled/original
-  mv ${WKD_ROOT}/1_basecalled/original/${sample}.fastq ${WKD_ROOT}/1_basecalled/original/${sample}_merged.fastq
-  cd ${WKD_ROOT}/1_basecalled
-  seqtk split ${WKD_ROOT}/1_basecalled/original/${sample}_merged.fastq -n 20
-
-  split -l $(( $(wc -l < ${WKD_ROOT}/1_basecalled/original/multiome_pilot_merged.fastq) / 20 / 4 * 4 )) \
-    -d --additional-suffix=_merged.fastq ${WKD_ROOT}/1_basecalled/original/multiome_pilot_merged.fastq ${sample}_
-
  
 fi  
 
 if [ "${MULTIPLEXING}" == TRUE ]; then 
   jobid1=$(sbatch --array=0-$((numSamples - 1)) ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
 else
-  jobid1=$(sbatch ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
+  totalSplitSamples=$((numSamples * 20))
+  jobid1=$(sbatch --array=0-$((totalSplitSamples - 1))%5 ${SCRIPT_ROOT}/processing/2_cutadapt_minimap2_tclean.sh ${config} | awk '{print $NF}')
 fi
 
 # isoseq-collapse, sqanti3

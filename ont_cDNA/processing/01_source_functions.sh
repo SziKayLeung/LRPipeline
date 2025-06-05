@@ -35,6 +35,26 @@ run_merge(){
   
 }
 
+# split_merged_fastq <dir> 
+# output: <sample_name>_00_merged.fastq, <sample_name>_01_merged.fastq....<sample_name>_20.merged.fastq
+split_merged_fastq(){
+
+  for sample_name in "${ALL_SAMPLES_NAMES[@]}"; do
+     
+    if [ -f $1/${sample_name}_20_merged.fastq ]; then
+      
+      echo -e "Splitting ${sample_name}.fastq: \e[32mCompleted\e[0m"
+    
+    else
+    
+     split -l $(( $(wc -l < $1/${sample_name}_merged.fastq) / 20 / 4 * 4 )) \
+      -d --additional-suffix=_merged.fastq $1/${sample_name}_merged.fastq ${sample_name}_
+      
+    fi
+
+  done
+}
+   
 # convertfasta2fastq <input_fastq> <output_fasta>
 convertfasta2fastq(){
 
@@ -58,6 +78,11 @@ merge_fastq_across_samples(){
     
     if [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ]; then
         fastq=$(find "$input_dir" -type f -name "*${gval}*")
+        
+    elif [ "${MULTIPLEXING}" != TRUE ]; then
+        clean_path=$(echo "${input_dir}/" | tr -cd '\11\12\15\40-\176')
+        echo "$clean_path"
+        fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
     else
         # special characters (like trailing spaces, newline characters, or non-printing characters) needs to be removed to correctly access paths
         clean_path=$(echo "${input_dir}/${gval}" | tr -cd '\11\12\15\40-\176')
@@ -68,7 +93,7 @@ merge_fastq_across_samples(){
     num_files=$(echo "$fastq" | wc -w)
     if [ $num_files -eq 0 ]; then
         echo "Merging failed"
-        exit 1
+        #exit 1
     fi 
     
     echo "Number of files to concatenate: $num_files"
