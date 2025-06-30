@@ -34,21 +34,32 @@ export dir=$WKD_ROOT/5_cupcake
 
 if [ "${MULTIPLEXING}" == TRUE ]; then 
 
+  mkdir -p ${dir}/5_align/combined_fasta ${dir}/5_align/combined 
   # replace sample barcodes with sample names
   awk -F, '{print $1 "_mapped," $2 "_mapped"}' $BARCODE_CONFIG > ${dir}/5_align/combined/mapped_barcode_config
+  # need combined bam files for iso-seq collapse
   replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${dir}/5_align/combined/mapped_barcode_config -d=${dir}/5_align/combined 
+  # need combined fasta files for demux
+  replace_filenames_with_csv.py --copy --ext=filtered.fa -i=$WKD_ROOT/5_cupcake/5_align -f=${dir}/5_align/combined/mapped_barcode_config -d=${dir}/5_align/combined_fasta 
     
 else
   
-  mkdir -p ${dir}/5_align/combined
+  mkdir -p ${dir}/5_align/combined_fasta ${dir}/5_align/combined
   
   for sample_name in "${ALL_SAMPLES_NAMES[@]}"; do
   
      echo ${sample_name}       
+     # bam files
      filteredBam=($(ls ${WKD_ROOT}/5_cupcake/5_align/${sample_name}_[0-9][0-9]_mapped.filtered.sorted.bam))
-     echo "Merging ${sample_name} parts"
+     echo "Merging bam files for ${sample_name} parts"
      printf "%s\n" ${filteredBam[@]}
      samtools merge -f ${dir}/5_align/combined/${sample_name}_mapped_filtered.sorted.bam ${filteredBam[@]}
+     
+     # fasta files
+     filteredfasta=($(ls ${WKD_ROOT}/5_cupcake/5_align/${sample_name}_[0-9][0-9]_mapped.filtered.fa))
+     echo "Merging fasta files for ${sample_name} parts"
+     printf "%s\n" ${filteredfasta[@]}
+     cat ${filteredfasta[@]} > ${dir}/5_align/combined_fasta/${sample_name}_mapped_filtered.fa
      
   done
 
