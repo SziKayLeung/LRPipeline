@@ -80,14 +80,28 @@ merge_fastq_across_samples(){
         fastq=$(find "$input_dir" -type f -name "*${gval}*")
         
     elif [ "${MULTIPLEXING}" != TRUE ]; then
+        
         clean_path=$(echo "${input_dir}/" | tr -cd '\11\12\15\40-\176')
         echo "$clean_path"
         fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+        
     else
-        # special characters (like trailing spaces, newline characters, or non-printing characters) needs to be removed to correctly access paths
-        clean_path=$(echo "${input_dir}/${gval}" | tr -cd '\11\12\15\40-\176')
-        echo "$clean_path"
-        fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+        if [ "${numBatches}" == "1" ]; then
+          
+          # special characters (like trailing spaces, newline characters, or non-printing characters) needs to be removed to correctly access paths
+          clean_path=$(echo "${input_dir}/${gval}" | tr -cd '\11\12\15\40-\176')
+          echo "$clean_path"
+          fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+		  
+        else
+
+           # split gval into batch and barcode (e.g. Batch1_barcode02)
+    		   batch=$(echo $gval | cut -d "_" -f 1)
+    		   barcode=$(echo $gval | cut -d "_" -f 2)
+    		   clean_path=$(echo "${input_dir}/${batch}/${barcode}" | tr -cd '\11\12\15\40-\176')
+    		   echo "$clean_path"
+    		   fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+        fi
     fi
     
     num_files=$(echo "$fastq" | wc -w)
