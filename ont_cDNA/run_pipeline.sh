@@ -42,9 +42,21 @@ if [ "${MULTIPLEXING}" == TRUE ]; then
   
   else
   
-    # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
-    ln -sf ${DEMULTIPLEX_DIR}/* "${WKD_ROOT}/1_demultiplex"
-    echo "Demultiplexing already performed"
+    if [ "${numBatches}" != "1" ]; then
+
+      # create a symlink between each batch with $WKD_ROOT/1_demultiplex
+      for batch in ${DEMULTIPLEX_DIR[@]}; do         
+        ln -sf ${batch} "${WKD_ROOT}/1_demultiplex"      
+      done
+      echo "Demultiplexing already performed for each batch" 
+
+    else
+    
+      # create a symlink between $WKD_ROOT/1_demultiplex and already demuxed folder (overwrites)
+      ln -sf ${DEMULTIPLEX_DIR}/* "${WKD_ROOT}/1_demultiplex"
+      echo "Demultiplexing already performed"
+      
+    fi
   
   fi
  
