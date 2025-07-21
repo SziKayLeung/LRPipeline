@@ -37,6 +37,7 @@ if [ "${MULTIPLEXING}" == TRUE ]; then
   mkdir -p ${dir}/5_align/combined_fasta ${dir}/5_align/combined 
   # replace sample barcodes with sample names
   awk -F, '{print $1 "_mapped," $2 "_mapped"}' $BARCODE_CONFIG > ${dir}/5_align/combined/mapped_barcode_config
+  sed -i '1s/^/old_name,new_name\n/' ${dir}/5_align/combined/mapped_barcode_config
   # need combined bam files for iso-seq collapse
   replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${dir}/5_align/combined/mapped_barcode_config -d=${dir}/5_align/combined 
   # need combined fasta files for demux
