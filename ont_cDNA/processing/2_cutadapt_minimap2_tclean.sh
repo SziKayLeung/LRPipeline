@@ -136,7 +136,7 @@ else
   
   # create stats output for QC downstream
   PrefixOriginal=${ALL_SAMPLES_NAMES[0]}
-  seqkit stats -a ${WKD_ROOT}/1_basecalled/original/${PrefixOriginal}_merged.fastq > ${WKD_ROOT}/1b_demultiplex_merged/${NAME}_readstats.txt
+  seqkit stats -a ${WKD_ROOT}/1_basecalled/${PrefixOriginal}_merged.fastq > ${WKD_ROOT}/1_basecalled/${NAME}_readstats.txt
 fi
   
 # map combined fasta to reference genome
