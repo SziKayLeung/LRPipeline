@@ -24,6 +24,8 @@ echo "Loading config file for project: ${config}"
 source ${config}
 
 if [ "${MULTIPLEXING}" == TRUE ]; then 
+  
+  echo "Multiplexing Mode: TRUE"
 
   if [ "${DEMULTIPLEX}" == "TRUE" ]; then 
   
@@ -60,6 +62,10 @@ if [ "${MULTIPLEXING}" == TRUE ]; then
   
   fi
  
+else
+  
+  echo "Multiplexing Mode: FALSE; Processing one sample in one flow cell"
+  
 fi  
 
 if [ "${MULTIPLEXING}" == TRUE ]; then 
