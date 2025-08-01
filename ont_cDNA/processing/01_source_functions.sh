@@ -6,6 +6,7 @@ export PATH=$PATH:${LOGEN_ROOT}/merge_characterise_dataset
 export PATH=$PATH:${LOGEN_ROOT}/miscellaneous 
 export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
 SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
+unset PYTHONPATH
 
 # Get the absolute directory where 01_source_functions.sh is located
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -48,7 +49,7 @@ split_merged_fastq(){
     else
     
      split -l $(( $(wc -l < $1/${sample_name}_merged.fastq) / 20 / 4 * 4 )) \
-      -d --additional-suffix=_merged.fastq $1/${sample_name}_merged.fastq ${sample_name}_
+      -d --additional-suffix=_merged.fastq $1/${sample_name}_merged.fastq $1/${sample_name}_
       
     fi
 
@@ -153,14 +154,22 @@ run_pychopper(){
   
   echo "Processing ${name} for pychopper" 
   
-  if [ -f $2/${name}_combined.fasta ]; then
+  if [ -f $2/${name}_combined.fasta ] && [ -s "$2/${name}_combined.fasta" ]; then
   
     echo -e "Pychopper: \e[32mCompleted\e[0m"
   
   else
 
-    pychopper -r $2/${name}_pychopperReport.pdf $1 $2/${sample}_merged_combined.fastq 2> $2/${sample}_pychopper.log
-    convertfasta2fastq $2/${sample}_merged_combined.fastq $2/${sample}_merged_combined.fasta
+    cd $2
+    pychopper -r $2/${name}_pychopperReport.pdf $1 $2/${sample}_merged_combined.fastq -k ${ONTKit} 2> $2/${sample}_pychopper.log
+    seqtk seq -A $2/${sample}_merged_combined.fastq > $2/${sample}_merged_combined.fasta
+    
+    if [ ! -s $2/${sample}_merged_combined.fasta ]; then
+      
+      echo "Error from processing pychopper"
+      #exit 1
+      
+    fi 
   
   fi
   
@@ -229,7 +238,7 @@ run_minimap2(){
 
   name=$(basename $1 .fastq)
 
-  if [ -f $2/${name}_sorted.sam ]; then
+  if [ -f $2/${name}_sorted.sam ] && [ -s $2/${name}_sorted.sam ]; then
     echo -e "Minimap2: \e[32mCompleted\e[0m"
   
   else
@@ -364,8 +373,12 @@ filter_alignment(){
 
 # run_isoseq_collapse <input_aligned_bam> <output_name> <output_dir>
 run_isoseq_collapse(){
-      
-  directory=$(dirname $1)
+
+  if [ -z "$3" ]; then
+    directory=$(dirname $1)
+  else
+    directory=$3
+  fi
   
   if [ -f $directory/$2_collapsed.gff ]; then
     
@@ -378,18 +391,47 @@ run_isoseq_collapse(){
     
     cd ${directory}
     
+    # if variable is not specified in config file 
+    if [ -z "$minalnidentity" ]; then
+      minalnidentity=0.95
+    fi
+    
+    if [ -z "$minalncoverage" ]; then
+      minalncoverage=0.99
+    fi
+    
+    if [ -z "$maxfuzzyjunction" ]; then
+      maxfuzzyjunction=5
+    fi
+    
+    if [ -z "$max5pdiff" ]; then
+      max5pdiff=50
+    fi
+    
+    if [ -z "$max3pdiff" ]; then
+      max3pdiff=100
+    fi
+    
+    echo "Max fuzzy junction: $maxfuzzyjunction"
+    echo "Max 5' difference: $max5pdiff"
+    echo "Max 3' difference: $max3pdiff"
+    echo "Min alignment identity: $minalnidentity"
+    echo "Min alignment coverage: $minalncoverage"
+    
     isoseq3 collapse $1 $2"_collapsed.gff" \
-      --min-aln-coverage 0.85 --min-aln-identity 0.95 --do-not-collapse-extra-5exons \
+      --min-aln-coverage $minalncoverage= --min-aln-identity $minalnidentity --do-not-collapse-extra-5exons \
+      --max-fuzzy-junction $maxfuzzyjunction --max-5p-diff $max5pdiff --max-3p-diff $max3pdiff \
       --log-level TRACE --log-file $2"_collapsed.log"
   
   fi
 }
 
 
-# demuliplex_collapsed_isoforms <input_directory_fasta> <input_collapsed_directory> <output_name>
+# demuliplex_collapsed_isoforms <input_directory_fasta> <input_collapsed_directory> <output_name> 
 demuliplex_collapsed_isoforms(){
+
   
-  if [ -f ${dir}/5_align/combined_fasta/$3"_sample_id.csv" ]; then
+  if [ -f $2/demux_fl_count.csv ]; then
     
     echo -e "Extracted abundance: \e[32mCompleted\e[0m"
   
@@ -399,7 +441,7 @@ demuliplex_collapsed_isoforms(){
   
     demux_cupcake_collapse.py \
       $2/$3"_collapsed.read_stat.txt" \
-      ${dir}/5_align/combined_fasta/$3"_sample_id.csv"\
+      $1/$3"_sample_id.csv"\
       --dataset=ont
   fi
   
