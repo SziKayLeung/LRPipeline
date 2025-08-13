@@ -1,7 +1,7 @@
 name: "Feature Request"
 description: "Suggest an idea or improvement for the pipeline"
 title: "[FEATURE] "
-labels: ["feature"]
+labels: ["enhancement"]
 
 body:
   - type: textarea
