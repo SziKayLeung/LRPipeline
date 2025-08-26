@@ -1,0 +1,45 @@
+name: "Bug Report"
+description: "Report bugs to help code improve"
+title: "[BUG] "
+labels: ["bug"]
+
+body:
+  - type: input
+    id: trying_to_do
+    attributes:
+      label: "What are you trying to do?"
+      description: "Describe what step of the pipeline you are trying to run."
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: "What is your bug?"
+      description: "Describe the bug you encountered."
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: "Please paste the code here:"
+      description: "Include the code snippet that caused the issue."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: error_message
+    attributes:
+      label: "Please paste the error message here:"
+      description: "Paste the exact error output."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: other_details
+    attributes:
+      label: "Any other relevant details?"
+      description: "Add anything else that might help us reproduce or understand the issue."

@@ -1,0 +1,38 @@
+name: "Feature Request"
+description: "Suggest an idea or improvement for the pipeline"
+title: "[FEATURE] "
+labels: ["enhancement"]
+
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "What problem are you trying to solve?"
+      description: "Explain the motivation behind this request."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Describe the solution you'd like"
+      description: "Explain the solution would you ideally want implemented."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Describe alternatives you've considered"
+      description: "List alternative solutions."
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Add any other context, screenshots, or examples here."
+      placeholder: "E.g., Screenshot of the UI where the feature would fit."
+    validations:
+      required: false
