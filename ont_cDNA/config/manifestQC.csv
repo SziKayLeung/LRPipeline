@@ -1,0 +1,7 @@
+studyName,sample,cellType,individual,phenotype,sex,age,ID,tissue,batch,species
+Pilot,barcode01,NA,sample1,TG,F,2,sample1_mapped,ECX,1,mouse
+Pilot,barcode02,NA,sample2,WT,M,2,sample2_mapped,ECX,1,mouse
+Pilot,barcode03,NA,sample3,TG,F,2,sample3_mapped,ECX,1,mouse
+Pilot,barcode04,NA,sample4,WT,M,2,sample4_mapped,ECX,2,mouse
+Pilot,barcode05,NA,sample5,WT,M,2,sample5_mapped,ECX,2,mouse
+Pilot,barcode06,NA,sample6,TG,F,2,sample6_mapped,ECX,2,mouse
