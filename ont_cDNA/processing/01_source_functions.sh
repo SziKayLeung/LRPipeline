@@ -419,7 +419,7 @@ run_isoseq_collapse(){
     echo "Min alignment coverage: $minalncoverage"
     
     isoseq3 collapse $1 $2"_collapsed.gff" \
-      --min-aln-coverage $minalncoverage= --min-aln-identity $minalnidentity --do-not-collapse-extra-5exons \
+      --min-aln-coverage $minalncoverage --min-aln-identity $minalnidentity --do-not-collapse-extra-5exons \
       --max-fuzzy-junction $maxfuzzyjunction --max-5p-diff $max5pdiff --max-3p-diff $max3pdiff \
       --log-level TRACE --log-file $2"_collapsed.log"
   
@@ -451,30 +451,31 @@ demuliplex_collapsed_isoforms(){
 # run_sqanti3 <gtf> <output_dir>
 run_sqanti3(){
   
-  if [ -f $2/${name}"_classification.txt" ]; then
+  if [ -f $2/${name}"_RulesFilter_result_classification.txt" ]; then
   
     echo -e "SQANTI: \e[32mCompleted\e[0m"
   
   else
-  
+
     name=$(basename $1 .gff)
   
     cd $2
    
     # sqanti qc
+    source activate sqanti3
     echo "Processing Sample ${name} for SQANTI3 QC"
     python $SQANTI3_DIR/sqanti3_qc.py -v
     echo ${GENOME_GTF}
     echo ${GENOME_FASTA}
-    
-    python $SQANTI3_DIR/sqanti3_qc.py $1 ${GENOME_GTF} ${GENOME_FASTA} \
-    --CAGE_peak ${CAGE_PEAK} \
-    --polyA_motif_list ${POLYA} --skipORF \
-    --genename --isoAnnotLite --report skip -t 30 &> ${name}.sqanti.qc.log
+
+    #python $SQANTI3_DIR/sqanti3_qc.py --isoforms $1 --refGTF ${GENOME_GTF} --refFasta ${GENOME_FASTA} \
+    #--CAGE_peak ${CAGE_PEAK} --output ${name} \
+    #--polyA_motif_list ${POLYA} --skipORF \
+    #--report skip -t 30 --dir $2 &> ${name}.sqanti.qc.log
     
     echo "Processing Sample ${name} for SQANTI filter"
-    python $SQANTI3_DIR/sqanti3_filter.py rules ${name}"_classification.txt" --gtf ${name}"_corrected.gtf" -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
-  
+    python $SQANTI3_DIR/sqanti3_filter.py rules --sqanti_class ${name}"_classification.txt" --filter_gtf ${name}"_corrected.gtf" --dir $2 -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
+    
   fi
  
 }
