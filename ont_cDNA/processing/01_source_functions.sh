@@ -8,6 +8,7 @@ export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
 SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
 unset PYTHONPATH
 
+
 # Get the absolute directory where 01_source_functions.sh is located
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -468,10 +469,10 @@ run_sqanti3(){
     echo ${GENOME_GTF}
     echo ${GENOME_FASTA}
 
-    #python $SQANTI3_DIR/sqanti3_qc.py --isoforms $1 --refGTF ${GENOME_GTF} --refFasta ${GENOME_FASTA} \
-    #--CAGE_peak ${CAGE_PEAK} --output ${name} \
-    #--polyA_motif_list ${POLYA} --skipORF \
-    #--report skip -t 30 --dir $2 &> ${name}.sqanti.qc.log
+    python $SQANTI3_DIR/sqanti3_qc.py --isoforms $1 --refGTF ${GENOME_GTF} --refFasta ${GENOME_FASTA} \
+    --CAGE_peak ${CAGE_PEAK} --output ${name} \
+    --polyA_motif_list ${POLYA} --skipORF \
+    --report skip -t 30 --dir $2 &> ${name}.sqanti.qc.log
     
     echo "Processing Sample ${name} for SQANTI filter"
     python $SQANTI3_DIR/sqanti3_filter.py rules --sqanti_class ${name}"_classification.txt" --filter_gtf ${name}"_corrected.gtf" --dir $2 -j=${SQANTI_JSON} --skip_report &> ${name}.sqanti.filter.log
