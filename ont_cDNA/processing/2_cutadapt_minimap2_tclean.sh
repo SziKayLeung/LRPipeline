@@ -7,8 +7,6 @@
 #SBATCH --nodes=1 # specify number of nodes
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
-#SBATCH --output=2_cutadapt_minimap2_tclean-%A_%a.o
-#SBATCH --error=2_cutadapt_minimap2_tclean-%A_%a.e
 
 
 ##-------------------------------------------------------------------------
@@ -34,23 +32,16 @@ source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 
 ##-------------------------------------------------------------------------
 
-# create folders
-if [ DEMULTIPLEX != TRUE ]; then
-  mkdir -p ${WKD_ROOT}/1_basecalled
-else
-  mkdir -p ${WKD_ROOT}/1_demultiplex ${WKD_ROOT}/1b_demultiplex_merged
-fi 
-mkdir -p ${WKD_ROOT}/2_cutadapt_merge ${WKD_ROOT}/3_minimap ${WKD_ROOT}/4_tclean ${WKD_ROOT}/5_cupcake
-mkdir -p ${WKD_ROOT}/5_cupcake/5_align  
-mkdir -p $WKD_ROOT/5_cupcake/5_align/combined
-mkdir -p $WKD_ROOT/5_cupcake/6_collapse $WKD_ROOT/5_cupcake/7_sqanti3
-
+# log output
+# Redirect output manually to ensure it goes there
+exec > >(tee -a "$WKD_ROOT/0_log/2_cutadapt_minimap2_tclean-${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.o") \
+     2> >(tee -a "$WKD_ROOT/0_log/2_cutadapt_minimap2_tclean-${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.e" >&2)
 
 ##-------------------------------------------------------------------------
 
 if [ "${MULTIPLEXING}" == TRUE ]; then 
 
-   echo "Processing multiple samples one one flow cell"
+   echo "Processing multiple samples on one flow cell"
    
    sample=${ALL_SAMPLES_NAMES[${SLURM_ARRAY_TASK_ID}]}
    echo ${sample}

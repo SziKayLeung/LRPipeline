@@ -72,10 +72,12 @@ merge_fastq_across_samples(){
   output_dir=$3
     
   if [ -f ${output_dir}/${gval}_merged.fastq ]; then
+    
     echo ${output_dir}/${gval}_merged.fastq
     echo -e "Merging ${gval}: \e[32mCompleted\e[0m"
   
   else
+    
     echo "Merging ${gval}"
     
     if [ "${DEMULTIPLEX_SOFTWARE}" == "Porechop" ]; then
@@ -155,7 +157,7 @@ run_pychopper(){
   
   echo "Processing ${name} for pychopper" 
   
-  if [ -f $2/${name}_combined.fasta ] && [ -s "$2/${name}_combined.fasta" ]; then
+  if [ -s "$2/${name}_combined.fasta" ]; then
   
     echo -e "Pychopper: \e[32mCompleted\e[0m"
   
@@ -239,7 +241,7 @@ run_minimap2(){
 
   name=$(basename $1 .fastq)
 
-  if [ -f $2/${name}_sorted.sam ] && [ -s $2/${name}_sorted.sam ]; then
+  if [ -s $2/${name}_sorted.sam ]; then
     echo -e "Minimap2: \e[32mCompleted\e[0m"
   
   else
@@ -280,8 +282,8 @@ run_minimap2stats(){
 run_transcriptclean(){
    
   name=$(basename $1 _merged_combined_filtered_sorted.sam)
-  
-  if [ -f $2/${name}/${name}_clean.TE.log ]; then
+    
+  if [ -s $2/${name}/${name}_clean.fa ]; then
     echo -e "TranscriptClean: \e[32mCompleted\e[0m"
   
   else
@@ -301,9 +303,12 @@ run_transcriptclean(){
 # Output: <sample_name>_combined_reads.sam, <sample_name>_Minimap2.log
 run_pbmm2(){
   
-  if [ -f $2/${name}_mapped.bam ]; then
-    
-    echo -e "Pbmm2: \e[32mCompleted\e[0m"
+  bam_file="$2/${name}_mapped.bam"
+  num_reads=$(samtools view -c "$bam_file" 2>/dev/null || echo 0)
+  
+  if [ "$num_reads" -ne 0 ]; then
+      
+      echo -e "Pbmm2: \e[32mCompleted\e[0m"
   
   else
   

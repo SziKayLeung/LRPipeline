@@ -32,6 +32,13 @@ export dir=$WKD_ROOT/5_cupcake
 
 ##-------------------------------------------------------------------------
 
+# log output
+# Redirect output manually to ensure it goes there
+exec > >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_ARRAY_TASK_ID}.o") 2> >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_ARRAY_TASK_ID}.e" >&2)
+
+     
+##-------------------------------------------------------------------------
+
 if [ "${MULTIPLEXING}" == TRUE ]; then 
 
   mkdir -p ${dir}/5_align/combined_fasta ${dir}/5_align/combined 
