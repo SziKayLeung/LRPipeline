@@ -95,7 +95,16 @@ merge_fastq_across_samples(){
           # special characters (like trailing spaces, newline characters, or non-printing characters) needs to be removed to correctly access paths
           clean_path=$(echo "${input_dir}/${gval}" | tr -cd '\11\12\15\40-\176')
           echo "$clean_path"
-          fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+          if [ -e "$clean_path" ]; then
+            fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+          else
+           # split gval into batch and barcode (e.g. Batch1_barcode02)
+    		   batch=$(echo $gval | cut -d "_" -f 1)
+    		   barcode=$(echo $gval | cut -d "_" -f 2)
+    		   clean_path=$(echo "${input_dir}/${batch}/${barcode}" | tr -cd '\11\12\15\40-\176')
+    		   echo "$clean_path"
+    		   fastq=$(ls ${clean_path}/*fa* 2>/dev/null)
+          fi
 		  
         else
 
@@ -110,25 +119,29 @@ merge_fastq_across_samples(){
     
     num_files=$(echo "$fastq" | wc -w)
     if [ $num_files -eq 0 ]; then
-        echo "Merging failed"
+        echo "Merging failed, check the samples in the barcode file match with data and the path exists"
         #exit 1
-    fi 
     
-    echo "Number of files to concatenate: $num_files"
-    echo "$fastq" > ${output_dir}/${gval}_file_list.txt
+    else 
+        
+      echo "Number of files to concatenate: $num_files"
+      echo "$fastq" > ${output_dir}/${gval}_file_list.txt
+      
+      # Check if the files are gzipped or plain fastq
+      if echo "$fastq" | grep -q ".gz$"; then
+        # If files are gzipped, concatenate and output as gzipped
+        echo "Concatenating gzipped files and unzip..."
+        zcat $fastq > ${output_dir}/${gval}_merged.fastq
+      else
+        # If files are not gzipped, concatenate as plain fastq
+        echo "Concatenating fastq files..."
+        cat $fastq > ${output_dir}/${gval}_merged.fastq
+      fi 
+      
+      seqkit stats -a ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
+      
+    fi      
     
-    # Check if the files are gzipped or plain fastq
-    if echo "$fastq" | grep -q ".gz$"; then
-      # If files are gzipped, concatenate and output as gzipped
-      echo "Concatenating gzipped files and unzip..."
-      zcat $fastq > ${output_dir}/${gval}_merged.fastq
-    else
-      # If files are not gzipped, concatenate as plain fastq
-      echo "Concatenating fastq files..."
-      cat $fastq > ${output_dir}/${gval}_merged.fastq
-    fi
-    
-    seqkit stats -a ${output_dir}/${gval}_merged.fastq > ${output_dir}/${gval}_readstats.txt
   fi 
   
 }
