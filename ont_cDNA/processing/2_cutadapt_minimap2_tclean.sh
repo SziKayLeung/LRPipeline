@@ -7,6 +7,8 @@
 #SBATCH --nodes=1 # specify number of nodes
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
+#SBATCH -o /dev/null  
+#SBATCH -e /dev/null   
 
 
 ##-------------------------------------------------------------------------
@@ -28,6 +30,10 @@ config=$(realpath "$1")
 echo "Loading config file for project: ${config}" 
 source ${config}
 source ${SCRIPT_ROOT}/processing/01_source_functions.sh
+
+# samples
+export ALL_SAMPLES_NAMES=($(awk -F "\"*,\"*" '{print $1}' ${SAMPLESHEET}))
+cat ${SAMPLESHEET}
 
 
 ##-------------------------------------------------------------------------

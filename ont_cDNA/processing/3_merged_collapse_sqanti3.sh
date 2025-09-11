@@ -8,8 +8,8 @@
 #SBATCH --ntasks-per-node=16 # specify number of processors per node
 #SBATCH --mail-type=END # send email at job completion
 #SBATCH --mem=200G # specify bytes memory to reserve
-#SBATCH --output=3_merged_collapse_sqanti3-%A_%a.o
-#SBATCH --error=3_merged_collapse_sqanti3-%A_%a.e
+#SBATCH -o /dev/null  
+#SBATCH -e /dev/null 
 
 
 ##-------------------------------------------------------------------------
@@ -30,11 +30,14 @@ source $1
 source ${SCRIPT_ROOT}/processing/01_source_functions.sh
 export dir=$WKD_ROOT/5_cupcake
 
+# samples
+export ALL_SAMPLES_NAMES=($(awk -F "\"*,\"*" '{print $1}' ${SAMPLESHEET}))
+
 ##-------------------------------------------------------------------------
 
 # log output
 # Redirect output manually to ensure it goes there
-exec > >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_ARRAY_TASK_ID}.o") 2> >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_ARRAY_TASK_ID}.e" >&2)
+exec > >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_JOB_ID}.o") 2> >(tee -a "${WKD_ROOT}/0_log/3_merged_collapse_sqanti3-${SLURM_JOB_ID}.e" >&2)
 
      
 ##-------------------------------------------------------------------------
@@ -43,7 +46,7 @@ if [ "${MULTIPLEXING}" == TRUE ]; then
 
   mkdir -p ${dir}/5_align/combined_fasta ${dir}/5_align/combined 
   # replace sample barcodes with sample names
-  awk -F, '{print $1 "_mapped," $2 "_mapped"}' $BARCODE_CONFIG > ${dir}/5_align/combined/mapped_barcode_config
+  awk -F, '{print $1 "_mapped," $2 "_mapped"}' ${SAMPLESHEET} > ${dir}/5_align/combined/mapped_barcode_config
   sed -i '1s/^/old_name,new_name\n/' ${dir}/5_align/combined/mapped_barcode_config
   # need combined bam files for iso-seq collapse
   replace_filenames_with_csv.py --copy --ext=filtered.sorted.bam -i=$WKD_ROOT/5_cupcake/5_align -f=${dir}/5_align/combined/mapped_barcode_config -d=${dir}/5_align/combined 
