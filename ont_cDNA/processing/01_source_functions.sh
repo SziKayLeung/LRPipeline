@@ -453,6 +453,31 @@ run_isoseq_collapse(){
 }
 
 
+#create_sample_id <input_directory_fasta> <input_collapsed_directory> <output_name> 
+create_sample_id(){
+	
+	# extract the read from each fasta file 
+	# assuming read starts with ">"
+	for i in $1/*fa*; do 	
+		echo Extracting reads for $i 	
+		name=$(basename $i .filtered.fa)
+		grep "^>" $i | sed 's/^>//' | awk -v nm="$name" '{print $1","nm}' > $1/${name}_sample_id.csv
+		sed -i '1s/^/id,primer\n/' $1/${name}_sample_id.csv
+    echo ${name}_sample_id.csv created 
+	done
+	
+	# append all sample IDs to one big file 
+	AllSampleID=$(ls $1/*sample_id.csv)
+	echo "$AllSampleID" > $2/$3"_sampleID_files.txt"
+  echo "id,primer" > $2/$3"_sample_id.csv"
+
+	# append all files except their headers
+	for f in $1/*sample_id.csv; do
+		tail -n +2 "$f" >> $2/$3"_sample_id.csv"
+	done
+	
+}
+
 # demuliplex_collapsed_isoforms <input_directory_fasta> <input_collapsed_directory> <output_name> 
 demuliplex_collapsed_isoforms(){
 
@@ -463,16 +488,16 @@ demuliplex_collapsed_isoforms(){
   
   else
   
-    adapt_cupcake_to_ont.py $1 -o $3
+    create_sample_id $1 $2 $3
   
     demux_cupcake_collapse.py \
       $2/$3"_collapsed.read_stat.txt" \
-      $1/$3"_sample_id.csv"\
+      $2/$3"_sample_id.csv"\
       --dataset=ont
+      
   fi
   
 }
-
 
 # run_sqanti3 <gtf> <output_dir>
 run_sqanti3(){
