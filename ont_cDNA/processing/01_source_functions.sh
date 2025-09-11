@@ -8,6 +8,13 @@ export PATH=$PATH:${LOGEN_ROOT}/assist_ont_processing
 SUBSETPOLYTAILS=$LOGEN_ROOT/assist_ont_processing/subset_polyA_polyT.py
 unset PYTHONPATH
 
+# utils
+export PORECHOP=${SCRIPT_ROOT}/utils/porechop-runner.py
+export TCLEAN=${TRANSCRIPTCLEAN_DIR}/TranscriptClean.py
+export SQANTI_JSON=${SCRIPT_ROOT}/utils/filter_default.json
+export CAGE_PEAK=${SCRIPT_ROOT}/utils/human.refTSS_v3.1.hg38.bed
+export POLYA=${SCRIPT_ROOT}/utils/mouse_and_human.polyA_motif.txt
+
 
 # Get the absolute directory where 01_source_functions.sh is located
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -71,7 +78,7 @@ merge_fastq_across_samples(){
   input_dir=$2
   output_dir=$3
     
-  if [ -f ${output_dir}/${gval}_merged.fastq ]; then
+  if [ -s ${output_dir}/${gval}_merged.fastq ]; then
     
     echo ${output_dir}/${gval}_merged.fastq
     echo -e "Merging ${gval}: \e[32mCompleted\e[0m"
