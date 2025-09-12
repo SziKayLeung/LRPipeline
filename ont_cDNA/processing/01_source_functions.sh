@@ -494,7 +494,10 @@ demuliplex_collapsed_isoforms(){
       $2/$3"_collapsed.read_stat.txt" \
       $2/$3"_sample_id.csv"\
       --dataset=ont
-      
+    
+    # stripped everything after "_mapped" in the column names output  
+    sed -i '1s/\([^,]*\)_mapped[^,]*/\1/g' $2/demux_fl_count.csv 
+    
   fi
   
 }
@@ -509,6 +512,7 @@ run_sqanti3(){
   else
 
     name=$(basename $1 .gff)
+    collaseDir=$(dirname $1)
   
     cd $2
    
@@ -521,7 +525,7 @@ run_sqanti3(){
 
     python $SQANTI3_DIR/sqanti3_qc.py --isoforms $1 --refGTF ${GENOME_GTF} --refFasta ${GENOME_FASTA} \
     --CAGE_peak ${CAGE_PEAK} --output ${name} \
-    --polyA_motif_list ${POLYA} --skipORF \
+    --polyA_motif_list ${POLYA} --skipORF --fl_count ${collaseDir}/demux_fl_count.csv \
     --report skip -t 30 --dir $2 &> ${name}.sqanti.qc.log
     
     echo "Processing Sample ${name} for SQANTI filter"
