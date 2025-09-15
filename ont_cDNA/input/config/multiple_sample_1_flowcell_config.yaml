@@ -1,0 +1,62 @@
+#!/bin/bash
+# vignette config file
+
+## --------------------------- Root Directories -----
+ 
+export SCRIPT_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA
+export WKD_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/Whole_Transcriptome/multiple_sample_1_flowcell/output
+export META_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/Whole_Transcriptome/multiple_sample_1_flowcell/input/metadata
+export LOGEN_ROOT=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LOGen
+
+## --------------------------- Input -----
+
+export NAME=mousePilot
+export SAMPLESHEET=${META_ROOT}/vignette_barcode.csv
+export numBatches=1
+export numSamples=7
+
+## --------------------------- Multiplexing -----
+
+export MULTIPLEXING=TRUE
+export DEMULTIPLEX=FALSE
+export DEMULTIPLEX_DIR=(/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/Whole_Transcriptome/multiple_sample_1_flowcell/input/data) 
+export DEMULTIPLEX_SOFTWARE=Pychopper
+export SEQUENCING=whole
+export MERGE_FASTQ=TRUE
+
+## --------------------------- References -----
+
+export GENOME_FASTA=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/References/Genome/mouse/mm10.fa
+export GENOME_GTF=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/References/Genome/mouse/gencode.vM22.annotation.gtf
+
+## --------------------------- Software	 -----
+
+export SQANTI3_DIR=/lustre/projects/Research_Project-MRC148213/lsl693/software/SQANTI3
+export TRANSCRIPTCLEAN_DIR=/lustre/projects/Research_Project-MRC148213/lsl693/software/TranscriptClean
+
+## --------------------------- Additional parameters -----
+
+# ONT kit (PCS109,PCS110,PCS111,PCS114,LSK114,PCB111,PCB114)
+ONTKit=LSK114
+
+# isoseq collapse threshold
+minalnidentity=0.95
+minalncoverage=0.85
+maxfuzzyjunction=0 
+max5pdiff=100
+max3pdiff=200
+
+# filtering expression
+export nreads=3
+export nsamples=3
+
+# monoexonic filtering
+monoexonic=1
+
+# target genes for additional filtering
+tgenesFile=NA
+
+## --------------------------- CPAT -----
+
+export HEXAMER=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/References/CPAT/Mouse_Hexamer.tsv
+export LOGITMODEL=/lustre/projects/Research_Project-MRC148213/lsl693/scripts/LRPipeline/ont_cDNA/vignette/References/CPAT/Mouse_logitModel.RData
